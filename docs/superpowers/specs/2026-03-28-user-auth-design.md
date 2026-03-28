@@ -91,16 +91,18 @@ JWT生成、验证、刷新:
 | 接口 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|------|
 | 发送验证码 | POST | `/api/v1/auth/code` | 发送手机/邮箱验证码 | 否 |
+| 统一验证码登录 | POST | `/api/v1/auth/login/code` | 手机号/邮箱验证码登录 | 否 |
 | 手机号注册 | POST | `/api/v1/auth/register/phone` | 手机号+密码注册 | 否 |
 | 邮箱注册 | POST | `/api/v1/auth/register/email` | 邮箱+密码注册 | 否 |
-| 手机号登录 | POST | `/api/v1/auth/login/phone` | 验证码登录 | 否 |
-| 邮箱登录 | POST | `/api/v1/auth/login/email` | 验证码登录 | 否 |
-| 密码登录 | POST | `/api/v1/auth/login/password` | 密码登录 | 否 |
+| 密码登录 | POST | `/api/v1/auth/login/password` | 密码登录(支持手机号/邮箱) | 否 |
 | 刷新Token | POST | `/api/v1/auth/refresh` | 用Refresh Token换新Token | 否 |
 | 退出登录 | POST | `/api/v1/auth/logout` | 废除Refresh Token | 是 |
 | 绑定邮箱 | POST | `/api/v1/auth/bind/email` | 绑定邮箱到当前账号 | 是 |
+| 解绑登录方式 | DELETE | `/api/v1/auth/unbind/:type` | 解绑手机号或邮箱 | 是 |
 | 重置密码 | POST | `/api/v1/auth/password/reset` | 忘记密码 | 否 |
 | 修改密码 | POST | `/api/v1/auth/password/change` | 已登录用户修改密码 | 是 |
+| 获取当前用户信息 | GET | `/api/v1/auth/user` | 获取当前登录用户信息 | 是 |
+| 获取绑定方式列表 | GET | `/api/v1/auth/bindings` | 获取当前用户绑定的所有登录方式 | 是 |
 
 ### 3.2 请求响应格式
 
@@ -123,6 +125,17 @@ JWT生成、验证、刷新:
   }
 }
 ```
+
+#### 统一验证码登录
+**请求**:
+```json
+{
+  "account": "13800138000",  // 手机号或邮箱
+  "code": "123456"
+}
+```
+
+**响应**: (同注册响应)
 
 #### 注册 (手机号/邮箱)
 **请求**:
@@ -178,8 +191,88 @@ JWT生成、验证、刷新:
   "message": "刷新成功",
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "expireIn": 7200
   }
+}
+```
+
+#### 获取当前用户信息
+**请求头**:
+```
+Authorization: Bearer {accessToken}
+```
+
+**响应**:
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 1,
+    "nickname": "用户1",
+    "avatar": null,
+    "bindings": [
+      {
+        "type": "phone",
+        "identifier": "138****8000",
+        "isPrimary": true,
+        "verified": true
+      },
+      {
+        "type": "email",
+        "identifier": "u***@example.com",
+        "isPrimary": false,
+        "verified": true
+      }
+    ]
+  }
+}
+```
+
+#### 获取绑定方式列表
+**请求头**:
+```
+Authorization: Bearer {accessToken}
+```
+
+**响应**:
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "bindings": [
+      {
+        "type": "phone",
+        "identifier": "138****8000",
+        "isPrimary": true,
+        "verified": true,
+        "bindAt": "2026-03-28T10:00:00"
+      },
+      {
+        "type": "email",
+        "identifier": "u***@example.com",
+        "isPrimary": false,
+        "verified": true,
+        "bindAt": "2026-03-28T12:00:00"
+      }
+    ]
+  }
+}
+```
+
+#### 解绑登录方式
+**请求**:
+```
+DELETE /api/v1/auth/unbind/phone
+```
+
+**响应**:
+```json
+{
+  "code": 200,
+  "message": "解绑成功"
 }
 ```
 
@@ -189,22 +282,24 @@ JWT生成、验证、刷新:
 
 ### 4.1 user 表
 
+**设计说明**: user表只存储用户核心信息,不直接存储手机号/邮箱。所有认证方式通过user_auth表管理。
+
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
 | id | BIGINT | 用户ID | PRIMARY KEY, AUTO_INCREMENT |
-| phone | VARCHAR(20) | 手机号 | UNIQUE, NOT NULL |
-| password | VARCHAR(128) | 加密密码 (BCrypt) | |
 | nickname | VARCHAR(50) | 昵称 | |
 | avatar | VARCHAR(255) | 头像URL | |
 | status | TINYINT | 状态: 1正常 0禁用 | DEFAULT 1 |
+| deleted_at | DATETIME | 软删除时间 | |
 | created_at | DATETIME | 创建时间 | DEFAULT CURRENT_TIMESTAMP |
 | updated_at | DATETIME | 更新时间 | DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP |
 
 **索引**:
-- `idx_phone` - 手机号索引
 - `idx_status` - 状态索引
 
 ### 4.2 user_auth 表
+
+**设计说明**: 存储用户的所有认证方式(手机号、邮箱),支持一个账号绑定多种登录方式。
 
 | 字段 | 类型 | 说明 | 约束 |
 |------|------|------|------|
@@ -212,6 +307,9 @@ JWT生成、验证、刷新:
 | user_id | BIGINT | 用户ID | NOT NULL |
 | auth_type | VARCHAR(20) | 类型: phone/email | NOT NULL |
 | identifier | VARCHAR(128) | 标识符: 手机号/邮箱 | NOT NULL |
+| password | VARCHAR(128) | 加密密码 (BCrypt) | |
+| verified | BOOLEAN | 是否已验证 | DEFAULT FALSE |
+| is_primary | BOOLEAN | 是否为主要登录方式 | DEFAULT FALSE |
 | bind_at | DATETIME | 绑定时间 | DEFAULT CURRENT_TIMESTAMP |
 
 **索引**:
@@ -236,16 +334,20 @@ verification:bind:user@example.com -> "789012"
 ```
 
 ### 5.2 Refresh Token
+**多设备支持**: 每个设备有独立的Refresh Token
 ```
-Key: refresh_token:{userId}
-Value: {refreshToken}
+Key: refresh_token:{userId}:{tokenId}
+Value: {deviceInfo}
 TTL: 604800秒 (7天)
 ```
 
 **示例**:
 ```
-refresh_token:1 -> "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+refresh_token:1:a1b2c3d4 -> {"device": "iPhone 15", "ip": "192.168.1.1"}
+refresh_token:1:e5f6g7h8 -> {"device": "Windows PC", "ip": "192.168.1.2"}
 ```
+
+**Token轮换**: 刷新时生成新的Refresh Token,废除旧的
 
 ### 5.3 发送频率限制
 ```
@@ -275,6 +377,7 @@ TTL: 86400秒 (1天)
 ```json
 {
   "userId": 123,
+  "tokenId": "a1b2c3d4",  // 用于多设备支持
   "type": "refresh",
   "exp": 1234567890
 }
@@ -304,7 +407,8 @@ TTL: 86400秒 (1天)
 ### 7.3 验证码安全
 - 格式: 6位数字
 - 有效期: 5分钟
-- 使用后立即失效
+- 使用后立即从Redis删除
+- 验证失败次数限制: 同一验证码最多验证5次
 - 发送限制:
   - 同一目标1分钟内只能发1次
   - 同一目标1天最多发10次
@@ -331,6 +435,11 @@ TTL: 86400秒 (1天)
 | 1008 | Token无效或已过期 | 401 |
 | 1009 | Refresh Token无效 | 401 |
 | 1010 | 账号已被禁用 | 403 |
+| 1011 | 密码强度不符合要求 | 400 |
+| 1012 | 手机号格式错误 | 400 |
+| 1013 | 邮箱格式错误 | 400 |
+| 1014 | 解绑失败(至少保留一种登录方式) | 400 |
+| 1015 | 验证码验证失败次数过多 | 429 |
 
 ### 8.2 异常处理
 - 使用`@RestControllerAdvice`统一处理
