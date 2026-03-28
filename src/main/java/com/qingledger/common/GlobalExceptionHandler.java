@@ -1,5 +1,7 @@
 package com.qingledger.common;
 
+import com.qingledger.exception.AuthException;
+import com.qingledger.exception.VerificationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -21,6 +23,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public Result<Void> handleBusinessException(BusinessException e) {
         log.error("业务异常: {}", e.getMessage());
+        return Result.fail(e.getCode(), e.getMessage());
+    }
+
+    /**
+     * 处理认证异常
+     */
+    @ExceptionHandler(AuthException.class)
+    public Result<Void> handleAuthException(AuthException e) {
+        log.error("认证异常: {}", e.getMessage());
+        return Result.fail(e.getCode(), e.getMessage());
+    }
+
+    /**
+     * 处理验证码异常
+     */
+    @ExceptionHandler(VerificationException.class)
+    public Result<Void> handleVerificationException(VerificationException e) {
+        log.error("验证码异常: {}", e.getMessage());
         return Result.fail(e.getCode(), e.getMessage());
     }
 
