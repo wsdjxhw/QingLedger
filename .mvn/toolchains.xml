@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<toolchains>
+  <!-- Maven 工具链配置 -->
+  <toolchain>
+    <type>jdk</type>
+    <provides>
+      <version>21</version>
+    </provides>
+    <configuration>
+      <jdkHome>C:\Users\wsdjx\.jdks</jdkHome>
+    </configuration>
+  </toolchain>
+</toolchains>
