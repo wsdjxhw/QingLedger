@@ -23,18 +23,12 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <maven.compiler.release>21</maven.compiler.release>
-        <mybatis-plus.version>3.5.5</mybatis-plus.version>
+        <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <knife4j.version>4.5.0</knife4j.version>
         <jwt.version>0.12.3</jwt.version>
-        <lombok.version>edge-SNAPSHOT</lombok.version>
+        <lombok.version>1.18.38</lombok.version>
     </properties>
 
-    <repositories>
-        <repository>
-            <id>projectlombok.org</id>
-            <url>https://projectlombok.org/edge-releases</url>
-        </repository>
-    </repositories>
 
     <dependencies>
         <!-- Spring Boot Web -->
@@ -87,10 +81,10 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- MyBatis-Plus -->
+        <!-- MyBatis-Plus for Spring Boot 3.x -->
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-boot-starter</artifactId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
             <version>${mybatis-plus.version}</version>
         </dependency>
 
