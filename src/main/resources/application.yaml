@@ -1,0 +1,131 @@
+# ============================================================================
+# QingLedger 智能记账系统 - 主配置文件
+# ============================================================================
+# 此文件包含通用配置,可安全提交到 GitHub
+# 敏感信息请使用环境变量或本地配置文件 application-local.yaml
+# ============================================================================
+
+spring:
+  application:
+    name: qing-ledger
+
+  # 多环境配置
+  profiles:
+    active: local
+
+  # 数据源配置(通用配置,具体值在各环境配置中覆盖)
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:qing_ledger}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+
+  # Redis配置(使用环境变量)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          min-idle: 0
+          max-idle: 8
+          max-active: 8
+          max-wait: -1ms
+
+  # RabbitMQ配置(可选)
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+# MyBatis-Plus配置
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.qingledger.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: ${MYBATIS_LOG:org.apache.ibatis.logging.slf4j.Slf4jImpl}
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# JWT配置
+jwt:
+  secret: ${JWT_SECRET:qing-ledger-secret-key-change-in-production-environment}
+  access-token-expire: ${JWT_ACCESS_EXPIRE:7200}
+  refresh-token-expire: ${JWT_REFRESH_EXPIRE:604800}
+
+# 服务器配置
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+
+# Knife4j API文档配置
+knife4j:
+  enable: ${KNIFE4J_ENABLE:true}
+  setting:
+    language: zh_cn
+  production: ${KNIFE4J_PRODUCTION:false}
+
+# LLM API配置(使用环境变量)
+llm:
+  deepseek:
+    api-key: ${DEEPSEEK_API_KEY:}
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}
+    model: ${DEEPSEEK_MODEL:deepseek-chat}
+  zhipu:
+    api-key: ${ZHIPU_API_KEY:}
+    base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+    model: ${ZHIPU_MODEL:glm-4}
+
+# 短信服务配置(使用环境变量)
+sms:
+  provider: ${SMS_PROVIDER:aliyun}
+  access-key-id: ${SMS_ACCESS_KEY_ID:}
+  access-key-secret: ${SMS_ACCESS_KEY_SECRET:}
+  sign-name: ${SMS_SIGN_NAME:}
+  template-code: ${SMS_TEMPLATE_CODE:}
+
+# 微信开放平台配置(使用环境变量)
+wechat:
+  oauth:
+    app-id: ${WECHAT_APP_ID:}
+    app-secret: ${WECHAT_APP_SECRET:}
+    redirect-uri: ${WECHAT_REDIRECT_URI:}
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.qingledger: ${LOG_LEVEL:INFO}
+    com.baomidou.mybatisplus: ${MYBATIS_LOG_LEVEL:INFO}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Actuator监控配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  # 禁用未使用的健康检查
+  health:
+    rabbit:
+      enabled: ${RABBITMQ_ENABLED:false}
+    elasticsearch:
+      enabled: ${ELASTICSEARCH_ENABLED:false}
