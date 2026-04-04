@@ -1,6 +1,7 @@
 package com.qingledger.controller;
 
 import com.qingledger.common.Result;
+import com.qingledger.dto.ClientInfo;
 import com.qingledger.dto.request.*;
 import com.qingledger.entity.User;
 import com.qingledger.entity.UserAuth;
@@ -18,7 +19,9 @@ import com.qingledger.vo.UserInfoResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -35,6 +38,10 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
+
+    private static final String REFRESH_TOKEN_COOKIE_NAME = "refreshToken";
+    private static final String REFRESH_TOKEN_COOKIE_PATH = "/api/v1/auth";
+    private static final int REFRESH_TOKEN_COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 天
 
     private final AuthService authService;
     private final UserAuthService userAuthService;
@@ -72,7 +79,9 @@ public class AuthController {
      */
     @Operation(summary = "用户注册", description = "通过手机号或邮箱注册新用户")
     @PostMapping("/register")
-    public Result<LoginResponse> register(@Valid @RequestBody RegisterRequest request) {
+    public Result<LoginResponse> register(@Valid @RequestBody RegisterRequest request,
+                                          HttpServletRequest httpRequest,
+                                          HttpServletResponse httpResponse) {
         log.info("用户注册请求: account={}", request.getAccount());
 
         Result<String> result = authService.register(
@@ -85,17 +94,7 @@ public class AuthController {
         if (result.getCode() == 200) {
             String accessToken = result.getData();
             Long userId = jwtUtil.getUserId(accessToken);
-
-            User user = userMapper.selectById(userId);
-            TokenService.TokenPairResult tokens = tokenService.generateTokens(userId);
-
-            LoginResponse response = new LoginResponse();
-            response.setAccessToken(tokens.accessToken());
-            response.setRefreshToken(tokens.refreshToken());
-            response.setExpireIn(tokens.expireIn());
-            response.setUser(buildUserInfo(user));
-
-            return Result.ok(response);
+            return buildLoginResponse(userId, httpRequest, httpResponse);
         } else {
             return Result.fail(result.getMessage());
         }
@@ -106,7 +105,10 @@ public class AuthController {
      */
     @Operation(summary = "密码登录", description = "使用账号和密码登录")
     @PostMapping("/login/password")
-    public Result<LoginResponse> loginByPassword(@RequestParam String account, @RequestParam String password) {
+    public Result<LoginResponse> loginByPassword(@RequestParam String account,
+                                                  @RequestParam String password,
+                                                  HttpServletRequest httpRequest,
+                                                  HttpServletResponse httpResponse) {
         log.info("用户登录请求: account={}", account);
 
         Result<String> result = authService.login(account, password);
@@ -114,17 +116,7 @@ public class AuthController {
         if (result.getCode() == 200) {
             String accessToken = result.getData();
             Long userId = jwtUtil.getUserId(accessToken);
-
-            User user = userMapper.selectById(userId);
-            TokenService.TokenPairResult tokens = tokenService.generateTokens(userId);
-
-            LoginResponse response = new LoginResponse();
-            response.setAccessToken(tokens.accessToken());
-            response.setRefreshToken(tokens.refreshToken());
-            response.setExpireIn(tokens.expireIn());
-            response.setUser(buildUserInfo(user));
-
-            return Result.ok(response);
+            return buildLoginResponse(userId, httpRequest, httpResponse);
         } else {
             return Result.fail(result.getMessage());
         }
@@ -135,7 +127,10 @@ public class AuthController {
      */
     @Operation(summary = "验证码登录", description = "使用手机号或邮箱验证码登录")
     @PostMapping("/login/code")
-    public Result<LoginResponse> loginByCode(@RequestParam String account, @RequestParam String code) {
+    public Result<LoginResponse> loginByCode(@RequestParam String account,
+                                              @RequestParam String code,
+                                              HttpServletRequest httpRequest,
+                                              HttpServletResponse httpResponse) {
         log.info("验证码登录请求: target={}", account);
 
         Result<String> result = authService.loginWithCode(account, code);
@@ -143,17 +138,7 @@ public class AuthController {
         if (result.getCode() == 200) {
             String accessToken = result.getData();
             Long userId = jwtUtil.getUserId(accessToken);
-
-            User user = userMapper.selectById(userId);
-            TokenService.TokenPairResult tokens = tokenService.generateTokens(userId);
-
-            LoginResponse response = new LoginResponse();
-            response.setAccessToken(tokens.accessToken());
-            response.setRefreshToken(tokens.refreshToken());
-            response.setExpireIn(tokens.expireIn());
-            response.setUser(buildUserInfo(user));
-
-            return Result.ok(response);
+            return buildLoginResponse(userId, httpRequest, httpResponse);
         } else {
             return Result.fail(result.getMessage());
         }
@@ -164,8 +149,25 @@ public class AuthController {
      */
     @Operation(summary = "刷新Token", description = "使用RefreshToken获取新的AccessToken")
     @PostMapping("/refresh")
-    public Result<LoginResponse> refresh(@RequestParam String refreshToken) {
+    public Result<LoginResponse> refresh(
+            @CookieValue(value = "refreshToken", required = false) String cookieRefreshToken,
+            @RequestParam(required = false) String paramRefreshToken,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse) {
         log.info("刷新Token请求");
+
+        // 优先从 Cookie 获取(Web 端)
+        String refreshToken = cookieRefreshToken;
+        if (refreshToken == null || refreshToken.isEmpty()) {
+            // 其次从参数获取(Mobile 端)
+            refreshToken = paramRefreshToken;
+        }
+
+        if (refreshToken == null || refreshToken.isEmpty()) {
+            return Result.fail("未提供 RefreshToken");
+        }
+
+        ClientInfo clientInfo = tokenService.extractClientInfo(httpRequest);
 
         Result<String> result = authService.refreshToken(refreshToken);
 
@@ -173,12 +175,18 @@ public class AuthController {
             String accessToken = result.getData();
             Long userId = jwtUtil.getUserId(accessToken);
 
-            TokenService.TokenPairResult tokens = tokenService.generateTokens(userId);
+            TokenService.TokenPairResult tokens = tokenService.generateTokens(userId, clientInfo);
 
             LoginResponse response = new LoginResponse();
             response.setAccessToken(tokens.accessToken());
-            response.setRefreshToken(tokens.refreshToken());
             response.setExpireIn(tokens.expireIn());
+
+            // Web 端更新 Cookie
+            if ("WEB".equalsIgnoreCase(clientInfo.getClientType())) {
+                setRefreshTokenCookie(httpResponse, tokens.refreshToken());
+            } else {
+                response.setRefreshToken(tokens.refreshToken());
+            }
 
             return Result.ok(response);
         } else {
@@ -317,19 +325,76 @@ public class AuthController {
      */
     @Operation(summary = "退出登录", description = "废除RefreshToken", security = @SecurityRequirement(name = "JWT"))
     @PostMapping("/logout")
-    public Result<Void> logout(HttpServletRequest request) {
+    public Result<Void> logout(HttpServletRequest request, HttpServletResponse response) {
         try {
             String accessToken = extractToken(request);
             Long userId = jwtUtil.getUserId(accessToken);
+            String tokenId = jwtUtil.getTokenId(accessToken);
 
-            // TODO: 获取tokenId并废除RefreshToken
+            tokenService.revokeRefreshToken(userId, tokenId);
+
+            // 清除 Cookie
+            clearRefreshTokenCookie(response);
+
             log.info("用户登出: userId={}", userId);
-
             return Result.ok();
         } catch (Exception e) {
             log.error("登出失败", e);
             return Result.fail("登出失败: " + e.getMessage());
         }
+    }
+
+    // ========== 私有方法 ==========
+
+    /**
+     * 构建登录响应(带设备信息)
+     */
+    private Result<LoginResponse> buildLoginResponse(Long userId,
+                                                      HttpServletRequest httpRequest,
+                                                      HttpServletResponse httpResponse) {
+        ClientInfo clientInfo = tokenService.extractClientInfo(httpRequest);
+        TokenService.TokenPairResult tokens = tokenService.generateTokens(userId, clientInfo);
+
+        User user = userMapper.selectById(userId);
+
+        LoginResponse response = new LoginResponse();
+        response.setAccessToken(tokens.accessToken());
+        response.setExpireIn(tokens.expireIn());
+        response.setUser(buildUserInfo(user));
+
+        // Web 端返回 HttpOnly Cookie
+        if ("WEB".equalsIgnoreCase(clientInfo.getClientType())) {
+            setRefreshTokenCookie(httpResponse, tokens.refreshToken());
+        } else {
+            // Mobile 端在响应体中返回
+            response.setRefreshToken(tokens.refreshToken());
+        }
+
+        return Result.ok(response);
+    }
+
+    /**
+     * 设置 RefreshToken HttpOnly Cookie
+     */
+    private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
+        Cookie cookie = new Cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath(REFRESH_TOKEN_COOKIE_PATH);
+        cookie.setMaxAge(REFRESH_TOKEN_COOKIE_MAX_AGE);
+        response.addCookie(cookie);
+    }
+
+    /**
+     * 清除 RefreshToken Cookie
+     */
+    private void clearRefreshTokenCookie(HttpServletResponse response) {
+        Cookie cookie = new Cookie(REFRESH_TOKEN_COOKIE_NAME, "");
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true);
+        cookie.setPath(REFRESH_TOKEN_COOKIE_PATH);
+        cookie.setMaxAge(0);
+        response.addCookie(cookie);
     }
 
     /**
