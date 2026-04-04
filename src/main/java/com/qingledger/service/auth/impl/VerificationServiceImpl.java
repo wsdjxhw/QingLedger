@@ -2,8 +2,7 @@ package com.qingledger.service.auth.impl;
 
 import com.qingledger.exception.VerificationException;
 import com.qingledger.service.auth.VerificationService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -11,16 +10,15 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Service
 public class VerificationServiceImpl implements VerificationService {
-
-    private static final Logger log = LoggerFactory.getLogger(VerificationServiceImpl.class);
-    private static final SecureRandom RANDOM = new SecureRandom();
-    private static final int CODE_LENGTH = 6;
-    private static final Duration CODE_EXPIRE = Duration.ofMinutes(5);
-    private static final Duration MINUTE_LIMIT = Duration.ofMinutes(1);
-    private static final Duration DAY_LIMIT = Duration.ofDays(1);
-    private static final int MAX_DAILY_COUNT = 10;
+    private static final SecureRandom RANDOM = new SecureRandom();//安全随机数生成器
+    private static final int CODE_LENGTH = 6;//验证码长度
+    private static final Duration CODE_EXPIRE = Duration.ofMinutes(5);//验证码过期时间:5分钟
+    private static final Duration MINUTE_LIMIT = Duration.ofMinutes(1);//一分钟的限制时长
+    private static final Duration DAY_LIMIT = Duration.ofDays(1);//一天限制时长
+    private static final int MAX_DAILY_COUNT = 10;//每天最多发送次数
 
     private final RedisTemplate<String, Object> redisTemplate;
 

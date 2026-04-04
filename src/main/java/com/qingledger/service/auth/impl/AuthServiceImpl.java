@@ -12,8 +12,7 @@ import com.qingledger.service.auth.TokenService;
 import com.qingledger.service.auth.VerificationService;
 import com.qingledger.service.user.UserService;
 import com.qingledger.service.userauth.UserAuthService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,10 +22,9 @@ import java.time.LocalDateTime;
 /**
  * 认证服务实现
  */
+@Slf4j
 @Service
 public class AuthServiceImpl implements AuthService {
-
-    private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
 
     private final UserService userService;
     private final VerificationService verificationService;

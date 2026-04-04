@@ -20,8 +20,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -32,11 +31,10 @@ import java.util.stream.Collectors;
  * 提供用户注册、登录、Token管理等认证相关接口
  */
 @Tag(name = "认证接口", description = "用户注册、登录、Token管理")
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
-
-    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private final AuthService authService;
     private final UserAuthService userAuthService;
