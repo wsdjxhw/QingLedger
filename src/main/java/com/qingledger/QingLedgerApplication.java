@@ -28,7 +28,7 @@ public class QingLedgerApplication {
 
             ========================================
                QingLedger 智能记账系统启动成功!
-               API文档: http://localhost:8080/doc.html
+               API文档: http://localhost:8081/doc.html
             ========================================
             """);
     }

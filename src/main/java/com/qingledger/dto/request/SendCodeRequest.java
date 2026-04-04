@@ -11,7 +11,7 @@ public class SendCodeRequest {
 
     @Schema(description = "类型: register/login/bind/reset")
     @NotBlank(message = "类型不能为空")
-    @Pattern(regexp = "register|login|bind|reset", message = "类型无效")
+    @Pattern(regexp = "(?i)register|login|bind|reset|REGISTER|LOGIN|BIND|RESET_PASSWORD", message = "类型无效")
     private String type;
 
     @Schema(description = "手机号或邮箱")
