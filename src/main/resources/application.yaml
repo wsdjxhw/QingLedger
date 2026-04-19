@@ -42,9 +42,9 @@ spring:
   # RabbitMQ配置(可选)
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+    port: ${RABBITMQ_PORT:15672}
+    username: ${RABBITMQ_USERNAME:wsdjxhw}
+    password: ${RABBITMQ_PASSWORD:15992233013Cb}
 
 # MyBatis-Plus配置
 mybatis-plus:
