@@ -1,7 +1,5 @@
 package com.qingledger.service.auth.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qingledger.config.JwtConfig;
 import com.qingledger.dto.ClientInfo;
 import com.qingledger.entity.RefreshTokenInfo;
@@ -20,7 +18,6 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Token 服务实现类 - 负责管理 Access Token 和 RefreshToken 的完整生命周期
@@ -40,7 +37,12 @@ import java.util.concurrent.TimeUnit;
  *
  * Redis 数据结构：
  * - refresh_token:{userId}:{tokenId} → RefreshToken值 (7天过期)
- * - refresh_token_info:{userId}:{tokenId} → RefreshTokenInfo JSON (7天过期)
+ * - refresh_token_info:{userId}:{tokenId} → RefreshTokenInfo 对象 (自动序列化为 JSON，7天过期)
+ *
+ * 序列化说明：
+ * - 使用 GenericJackson2JsonRedisSerializer 自动处理对象序列化
+ * - 存储时：直接存入对象，RedisTemplate 自动序列化为 JSON（带 @class 类型信息）
+ * - 读取时：RedisTemplate 自动反序列化为原对象类型
  *
  * @author QingLedger Team
  * @since 2026-04-04 完成回顾和注释
@@ -71,13 +73,9 @@ public class TokenServiceImpl implements TokenService {
 
     /**
      * Redis 模板 - 用于存储 RefreshToken
+     * 注意：使用 GenericJackson2JsonRedisSerializer 后，会自动处理对象的序列化/反序列化
      */
     private final RedisTemplate<String, Object> redisTemplate;
-
-    /**
-     * JSON 序列化工具 - 用于 RefreshTokenInfo 与 JSON 互转
-     */
-    private final ObjectMapper objectMapper;
 
     /**
      * Redis Lua 脚本 - 原子化存储 RefreshToken 和设备信息
@@ -92,16 +90,13 @@ public class TokenServiceImpl implements TokenService {
      *
      * @param jwtUtil JWT 工具类
      * @param jwtConfig JWT 配置
-     * @param redisTemplate Redis 模板
-     * @param objectMapper JSON 序列化工具
+     * @param redisTemplate Redis 模板（已配置自动序列化）
      */
     public TokenServiceImpl(JwtUtil jwtUtil, JwtConfig jwtConfig,
-                           RedisTemplate<String, Object> redisTemplate,
-                           ObjectMapper objectMapper) {
+                           RedisTemplate<String, Object> redisTemplate) {
         this.jwtUtil = jwtUtil;
         this.jwtConfig = jwtConfig;
         this.redisTemplate = redisTemplate;
-        this.objectMapper = objectMapper;
 
         // 加载 Lua 脚本（从 resources/lua/token/store_refresh_token.lua）
         // Lua 脚本保证：存储 Token 和 TokenInfo 两个操作是原子的
@@ -175,30 +170,34 @@ public class TokenServiceImpl implements TokenService {
         }
 
         // 步骤3: 存储到 Redis
+        // 注意：使用新的 GenericJackson2JsonRedisSerializer 配置后，
+        // RedisTemplate 会自动处理对象的序列化，无需手动转换为 JSON 字符串
         String refreshTokenKey = "refresh_token:" + userId + ":" + tokenId;
         String infoKey = "refresh_token_info:" + userId + ":" + tokenId;
 
-        try {
-            // 将 RefreshTokenInfo 转为 JSON 字符串
-            String infoJson = objectMapper.writeValueAsString(info);
-
-            if (storeRefreshTokenScript != null) {
-                // 使用 Lua 脚本原子存储（推荐方式）
-                // 保证 Token 和 TokenInfo 同时写入，要么都成功，要么都失败
+        if (storeRefreshTokenScript != null) {
+            // 使用 Lua 脚本原子存储（推荐方式）
+            // 保证 Token 和 TokenInfo 同时写入，要么都成功，要么都失败
+            // 重要：GenericJackson2JsonRedisSerializer 会自动序列化 ARGV 参数，
+            //       所以直接传入对象即可，不需要手动序列化为 JSON 字符串
+            try {
                 redisTemplate.execute(
                     storeRefreshTokenScript,
                     Arrays.asList(refreshTokenKey, infoKey),     // KEYS[1], KEYS[2]
-                    refreshToken,                               // ARGV[1]
-                    String.valueOf(REFRESH_TOKEN_EXPIRE_SECONDS), // ARGV[2]
-                    infoJson                                    // ARGV[3]
+                    refreshToken,                               // ARGV[1]: RefreshToken 字符串
+                    String.valueOf(REFRESH_TOKEN_EXPIRE_SECONDS), // ARGV[2]: 过期秒数
+                    info                                        // ARGV[3]: RefreshTokenInfo 对象（自动序列化）
                 );
-            } else {
-                // 降级方案: 普通 Redis 操作（如果 Lua 脚本加载失败）
+            } catch (Exception e) {
+                log.warn("Lua 脚本执行失败,降级为普通 Redis 操作", e);
                 redisTemplate.opsForValue().set(refreshTokenKey, refreshToken, REFRESH_TOKEN_TTL);
-                redisTemplate.opsForValue().set(infoKey, infoJson, REFRESH_TOKEN_TTL);
+                redisTemplate.opsForValue().set(infoKey, info, REFRESH_TOKEN_TTL);
             }
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize RefreshTokenInfo", e);
+        } else {
+            // 降级方案: 普通 Redis 操作（如果 Lua 脚本加载失败）
+            // 直接存储对象，RedisTemplate 会自动序列化为 JSON
+            redisTemplate.opsForValue().set(refreshTokenKey, refreshToken, REFRESH_TOKEN_TTL);
+            redisTemplate.opsForValue().set(infoKey, info, REFRESH_TOKEN_TTL);
         }
 
         // 步骤4: 返回结果
@@ -259,6 +258,8 @@ public class TokenServiceImpl implements TokenService {
         String tokenId = jwtUtil.getTokenId(refreshToken);
 
         // 步骤2: 从 Redis 获取存储的 TokenInfo
+        // 注意：使用新的 GenericJackson2JsonRedisSerializer 配置后，
+        // RedisTemplate 会自动将 JSON 反序列化为 RefreshTokenInfo 对象
         String refreshTokenKey = "refresh_token:" + userId + ":" + tokenId;
         String infoKey = "refresh_token_info:" + userId + ":" + tokenId;
 
@@ -267,17 +268,10 @@ public class TokenServiceImpl implements TokenService {
             throw new AuthException(1010, "RefreshToken 已失效,请重新登录");
         }
 
-        String infoJson = (String) redisTemplate.opsForValue().get(infoKey);
-        if (infoJson == null) {
+        // 直接获取 RefreshTokenInfo 对象，自动反序列化
+        RefreshTokenInfo storedInfo = (RefreshTokenInfo) redisTemplate.opsForValue().get(infoKey);
+        if (storedInfo == null) {
             throw new AuthException(1010, "RefreshToken 已失效,请重新登录");
-        }
-
-        // 步骤3: 解析 TokenInfo（JSON → Java对象）
-        RefreshTokenInfo storedInfo;
-        try {
-            storedInfo = objectMapper.readValue(infoJson, RefreshTokenInfo.class);
-        } catch (JsonProcessingException e) {
-            throw new AuthException(1011, "Token 信息解析失败");
         }
 
         // 步骤4: 🔐 设备验证（安全核心）

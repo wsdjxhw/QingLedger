@@ -39,7 +39,7 @@ public interface VerificationService {
      *
      * @param type 验证码类型（PHONE/EMAIL）
      * @param target 发送目标（手机号/邮箱）
-     * @throws VerificationException 1001-发送过于频繁, 1002-达到日上限
+     * @throws //VerificationException 1001-发送过于频繁, 1002-达到日上限
      */
     void sendCode(String type, String target);
 
@@ -59,7 +59,7 @@ public interface VerificationService {
      * @param target 发送目标（手机号/邮箱）
      * @param code 用户输入的验证码
      * @return true-验证成功
-     * @throws VerificationException 1005-验证码错误, 1006-验证码失效, 1015-失败次数过多
+     * @throws //VerificationException 1005-验证码错误, 1006-验证码失效, 1015-失败次数过多
      */
     boolean verifyCode(String type, String target, String code);
 
