@@ -4,7 +4,7 @@ import com.qingledger.exception.VerificationException;
 import com.qingledger.service.auth.VerificationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
@@ -93,17 +93,18 @@ public class VerificationServiceImpl implements VerificationService {
     }
 
     /**
-     * Redis 模板（用于存储验证码和限制信息）
+     * 字符串 Redis 模板（用于验证码存储和 Lua 脚本执行）
+     * 使用 Spring Boot 自动配置的 StringRedisTemplate，确保 Lua 脚本接收到纯字符串参数
      */
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
     /**
-     * 构造器 - 通过依赖注入获取 RedisTemplate
+     * 构造器 - 通过依赖注入获取 StringRedisTemplate
      *
-     * @param redisTemplate Redis 模板
+     * @param stringRedisTemplate Spring Boot 自动配置的字符串 Redis 模板
      */
-    public VerificationServiceImpl(RedisTemplate<String, Object> redisTemplate) {
-        this.redisTemplate = redisTemplate;
+    public VerificationServiceImpl(StringRedisTemplate stringRedisTemplate) {
+        this.redisTemplate = stringRedisTemplate;
     }
 
     /**
@@ -132,6 +133,7 @@ public class VerificationServiceImpl implements VerificationService {
 
         // 步骤3: 使用Lua脚本原子化执行所有操作
         // Lua脚本会：检查1分钟限制 → 检查日限制 → 存储验证码 → 更新计数
+        // 注意：使用字符串 RedisTemplate，确保 ARGV 参数是纯字符串
         Long result = redisTemplate.execute(
                 SEND_CODE_REDIS_SCRIPT,
                 Arrays.asList(codeKey, limitKey, minuteKey),        // KEYS[1], KEYS[2], KEYS[3]
@@ -179,7 +181,7 @@ public class VerificationServiceImpl implements VerificationService {
     @Override
     public boolean verifyCode(String type, String target, String code) {
         String codeKey = getCodeKey(type, target);
-        String storedCode = (String) redisTemplate.opsForValue().get(codeKey);
+        String storedCode = redisTemplate.opsForValue().get(codeKey);
 
         if (storedCode == null) {
             throw new VerificationException(1006, "验证码已失效,请等待冷却时间结束后再次发送");
