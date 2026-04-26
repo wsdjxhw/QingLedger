@@ -84,9 +84,19 @@ public class AuthServiceImpl implements AuthService {
             }
         }
 
+        // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+        String verificationType;
+        if (target.matches(PHONE_PATTERN)) {
+            verificationType = AUTH_TYPE_PHONE;
+        } else if (target.matches(EMAIL_PATTERN)) {
+            verificationType = AUTH_TYPE_EMAIL;
+        } else {
+            return Result.fail("不支持的验证码目标类型");
+        }
+
         // 发送验证码
         try {
-            verificationService.sendCode(type, target);
+            verificationService.sendCode(verificationType, target);
             return Result.ok();
         } catch (Exception e) {
             log.error("验证码发送失败", e);
@@ -117,7 +127,17 @@ public class AuthServiceImpl implements AuthService {
 
         // 校验验证码
         try {
-            if (!verificationService.verifyCode("REGISTER", target, code)) {
+            // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+            String verificationType;
+            if (target.matches(PHONE_PATTERN)) {
+                verificationType = AUTH_TYPE_PHONE;
+            } else if (target.matches(EMAIL_PATTERN)) {
+                verificationType = AUTH_TYPE_EMAIL;
+            } else {
+                return Result.fail("不支持的验证码目标类型");
+            }
+
+            if (!verificationService.verifyCode(verificationType, target, code)) {
                 return Result.fail("验证码错误或已过期");
             }
         } catch (Exception e) {
@@ -219,7 +239,17 @@ public class AuthServiceImpl implements AuthService {
 
         // 校验验证码
         try {
-            if (!verificationService.verifyCode("LOGIN", target, code)) {
+            // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+            String verificationType;
+            if (target.matches(PHONE_PATTERN)) {
+                verificationType = AUTH_TYPE_PHONE;
+            } else if (target.matches(EMAIL_PATTERN)) {
+                verificationType = AUTH_TYPE_EMAIL;
+            } else {
+                return Result.fail("不支持的验证码目标类型");
+            }
+
+            if (!verificationService.verifyCode(verificationType, target, code)) {
                 return Result.fail("验证码错误或已过期");
             }
         } catch (Exception e) {
@@ -264,7 +294,17 @@ public class AuthServiceImpl implements AuthService {
 
         // 校验验证码
         try {
-            if (!verificationService.verifyCode("RESET_PASSWORD", target, code)) {
+            // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+            String verificationType;
+            if (target.matches(PHONE_PATTERN)) {
+                verificationType = AUTH_TYPE_PHONE;
+            } else if (target.matches(EMAIL_PATTERN)) {
+                verificationType = AUTH_TYPE_EMAIL;
+            } else {
+                return Result.fail("不支持的验证码目标类型");
+            }
+
+            if (!verificationService.verifyCode(verificationType, target, code)) {
                 return Result.fail("验证码错误或已过期");
             }
         } catch (Exception e) {

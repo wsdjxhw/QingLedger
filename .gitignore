@@ -26,6 +26,7 @@ bin/
 logs/
 *.log
 log/
+VerificationServiceTest.java
 
 # OS
 .DS_Store
@@ -47,6 +48,8 @@ application.yaml
 PROJECT_MEMORY.md
 docs/superpowers/
 ip2region.xdb
+UNIT_TEST_GUIDE.md
+nul
 
 # Claude Code 开发工具配置
 .claude/
