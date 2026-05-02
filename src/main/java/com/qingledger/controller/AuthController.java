@@ -84,7 +84,7 @@ public class AuthController {
                                           HttpServletResponse httpResponse) {
         log.info("用户注册请求: account={}", request.getAccount());
 
-        Result<String> result = authService.register(
+        Result<Long> result = authService.register(
             request.getAccount(),
             request.getPassword(),
             request.getAccount(),
@@ -92,8 +92,7 @@ public class AuthController {
         );
 
         if (result.getCode() == 200) {
-            String accessToken = result.getData();
-            Long userId = jwtUtil.getUserId(accessToken);
+            Long userId = result.getData();
             return buildLoginResponse(userId, httpRequest, httpResponse);
         } else {
             return Result.fail(result.getMessage());
@@ -111,11 +110,10 @@ public class AuthController {
                                                   HttpServletResponse httpResponse) {
         log.info("用户登录请求: account={}", account);
 
-        Result<String> result = authService.login(account, password);
+        Result<Long> result = authService.login(account, password);
 
         if (result.getCode() == 200) {
-            String accessToken = result.getData();
-            Long userId = jwtUtil.getUserId(accessToken);
+            Long userId = result.getData();
             return buildLoginResponse(userId, httpRequest, httpResponse);
         } else {
             return Result.fail(result.getMessage());
@@ -133,11 +131,10 @@ public class AuthController {
                                               HttpServletResponse httpResponse) {
         log.info("验证码登录请求: target={}", account);
 
-        Result<String> result = authService.loginWithCode(account, code);
+        Result<Long> result = authService.loginWithCode(account, code);
 
         if (result.getCode() == 200) {
-            String accessToken = result.getData();
-            Long userId = jwtUtil.getUserId(accessToken);
+            Long userId = result.getData();
             return buildLoginResponse(userId, httpRequest, httpResponse);
         } else {
             return Result.fail(result.getMessage());

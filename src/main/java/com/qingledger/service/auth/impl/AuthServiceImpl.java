@@ -106,7 +106,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public Result<String> register(String username, String password, String target, String code) {
+    public Result<Long> register(String username, String password, String target, String code) {
         log.info("用户注册: username={}, target={}", username, target);
 
         // 校验目标格式
@@ -185,15 +185,12 @@ public class AuthServiceImpl implements AuthService {
 
         userAuthMapper.insert(userAuth);
 
-        // 生成令牌
-        TokenService.TokenPairResult tokens = tokenService.generateTokens(user.getId());
-
         log.info("用户注册成功: userId={}", user.getId());
-        return Result.ok(tokens.accessToken());
+        return Result.ok(user.getId());
     }
 
     @Override
-    public Result<String> login(String account, String password) {
+    public Result<Long> login(String account, String password) {
         log.info("用户登录: account={}", account);
 
         if (account == null || account.trim().isEmpty()) {
@@ -223,15 +220,12 @@ public class AuthServiceImpl implements AuthService {
             return Result.fail("用户已被禁用");
         }
 
-        // 生成令牌
-        TokenService.TokenPairResult tokens = tokenService.generateTokens(userAuth.getUserId());
-
         log.info("用户登录成功: userId={}", userAuth.getUserId());
-        return Result.ok(tokens.accessToken());
+        return Result.ok(userAuth.getUserId());
     }
 
     @Override
-    public Result<String> loginWithCode(String target, String code) {
+    public Result<Long> loginWithCode(String target, String code) {
         log.info("验证码登录: target={}", target);
 
         // 校验目标格式
@@ -272,11 +266,8 @@ public class AuthServiceImpl implements AuthService {
             return Result.fail("用户已被禁用");
         }
 
-        // 生成令牌
-        TokenService.TokenPairResult tokens = tokenService.generateTokens(userAuth.getUserId());
-
         log.info("验证码登录成功: userId={}", userAuth.getUserId());
-        return Result.ok(tokens.accessToken());
+        return Result.ok(userAuth.getUserId());
     }
 
     @Override

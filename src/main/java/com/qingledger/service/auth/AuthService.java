@@ -21,25 +21,25 @@ public interface AuthService {
      * @param password 密码
      * @param target 手机号或邮箱
      * @param code 验证码
-     * @return Result
+     * @return Result 返回用户ID
      */
-    Result<String> register(String username, String password, String target, String code);
+    Result<Long> register(String username, String password, String target, String code);
 
     /**
      * 用户登录
      * @param account 账号（用户名/手机号/邮箱）
      * @param password 密码
-     * @return Result
+     * @return Result 返回用户ID
      */
-    Result<String> login(String account, String password);
+    Result<Long> login(String account, String password);
 
     /**
      * 验证码登录
      * @param target 手机号或邮箱
      * @param code 验证码
-     * @return Result
+     * @return Result 返回用户ID
      */
-    Result<String> loginWithCode(String target, String code);
+    Result<Long> loginWithCode(String target, String code);
 
     /**
      * 重置密码
