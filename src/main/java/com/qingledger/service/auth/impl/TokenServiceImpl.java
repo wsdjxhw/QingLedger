@@ -126,10 +126,12 @@ public class TokenServiceImpl implements TokenService {
     @Override
     public TokenPairResult generateTokens(Long userId, ClientInfo clientInfo) {
         // 步骤1: 生成双Token
-        String accessToken = jwtUtil.generateAccessToken(userId);
+        // 先生成 RefreshToken 获取 tokenId
         JwtUtil.RefreshTokenResult refreshResult = jwtUtil.generateRefreshToken(userId);
         String refreshToken = refreshResult.token();
         String tokenId = refreshResult.tokenId();
+        // 再生成 AccessToken，将 refreshTokenId 嵌入其中
+        String accessToken = jwtUtil.generateAccessToken(userId, tokenId);
 
         // 步骤2: 构建设备信息（用于后续安全验证）
         RefreshTokenInfo info = new RefreshTokenInfo();

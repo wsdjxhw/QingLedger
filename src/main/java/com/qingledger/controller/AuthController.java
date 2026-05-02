@@ -329,9 +329,9 @@ public class AuthController {
         try {
             String accessToken = extractToken(request);
             Long userId = jwtUtil.getUserId(accessToken);
-            String tokenId = jwtUtil.getTokenId(accessToken);
+            String refreshTokenId = jwtUtil.getRefreshTokenId(accessToken);
 
-            tokenService.revokeRefreshToken(userId, tokenId);
+            tokenService.revokeRefreshToken(userId, refreshTokenId);
 
             // 清除 Cookie
             clearRefreshTokenCookie(response);
