@@ -9,15 +9,11 @@ import com.qingledger.utils.IpUtil;
 import com.qingledger.utils.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.scripting.support.ResourceScriptSource;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 
 /**
  * Token 服务实现类 - 负责管理 Access Token 和 RefreshToken 的完整生命周期
@@ -77,11 +73,6 @@ public class TokenServiceImpl implements TokenService {
      */
     private final RedisTemplate<String, Object> redisTemplate;
 
-    /**
-     * Redis Lua 脚本 - 原子化存储 RefreshToken 和设备信息
-     * 使用Lua脚本可以保证多个Redis操作的原子性
-     */
-    private DefaultRedisScript<Long> storeRefreshTokenScript;
 
     /**
      * 构造器 - 通过依赖注入获取所需组件
@@ -97,19 +88,6 @@ public class TokenServiceImpl implements TokenService {
         this.jwtUtil = jwtUtil;
         this.jwtConfig = jwtConfig;
         this.redisTemplate = redisTemplate;
-
-        // 加载 Lua 脚本（从 resources/lua/token/store_refresh_token.lua）
-        // Lua 脚本保证：存储 Token 和 TokenInfo 两个操作是原子的
-        try {
-            storeRefreshTokenScript = new DefaultRedisScript<>();
-            storeRefreshTokenScript.setScriptSource(
-                new ResourceScriptSource(new ClassPathResource("lua/token/store_refresh_token.lua"))
-            );
-            storeRefreshTokenScript.setResultType(Long.class);
-        } catch (Exception e) {
-            log.warn("Lua 脚本加载失败,将使用普通 Redis 操作", e);
-            storeRefreshTokenScript = null;
-        }
     }
 
     /**
@@ -170,35 +148,18 @@ public class TokenServiceImpl implements TokenService {
         }
 
         // 步骤3: 存储到 Redis
-        // 注意：使用新的 GenericJackson2JsonRedisSerializer 配置后，
-        // RedisTemplate 会自动处理对象的序列化，无需手动转换为 JSON 字符串
+        // 修复说明：废弃 Lua 脚本方式，直接使用 RedisTemplate 的 set() 操作
+        // 原因：redisTemplate.execute() 执行 Lua 脚本时不会自动序列化 ARGV 参数，
+        //      导致 RefreshTokenInfo 对象丢失 @class 类型信息，反序列化时变为 LinkedHashMap
+        //
+        // 新方案：使用 RedisTemplate 的普通操作，它会自动添加 @class 并正确序列化
+        //        虽然失去了 Lua 脚本的原子性保证，但对于 Token 存储场景影响很小
         String refreshTokenKey = "refresh_token:" + userId + ":" + tokenId;
         String infoKey = "refresh_token_info:" + userId + ":" + tokenId;
 
-        if (storeRefreshTokenScript != null) {
-            // 使用 Lua 脚本原子存储（推荐方式）
-            // 保证 Token 和 TokenInfo 同时写入，要么都成功，要么都失败
-            // 重要：GenericJackson2JsonRedisSerializer 会自动序列化 ARGV 参数，
-            //       所以直接传入对象即可，不需要手动序列化为 JSON 字符串
-            try {
-                redisTemplate.execute(
-                    storeRefreshTokenScript,
-                    Arrays.asList(refreshTokenKey, infoKey),     // KEYS[1], KEYS[2]
-                    refreshToken,                               // ARGV[1]: RefreshToken 字符串
-                    String.valueOf(REFRESH_TOKEN_EXPIRE_SECONDS), // ARGV[2]: 过期秒数
-                    info                                        // ARGV[3]: RefreshTokenInfo 对象（自动序列化）
-                );
-            } catch (Exception e) {
-                log.warn("Lua 脚本执行失败,降级为普通 Redis 操作", e);
-                redisTemplate.opsForValue().set(refreshTokenKey, refreshToken, REFRESH_TOKEN_TTL);
-                redisTemplate.opsForValue().set(infoKey, info, REFRESH_TOKEN_TTL);
-            }
-        } else {
-            // 降级方案: 普通 Redis 操作（如果 Lua 脚本加载失败）
-            // 直接存储对象，RedisTemplate 会自动序列化为 JSON
-            redisTemplate.opsForValue().set(refreshTokenKey, refreshToken, REFRESH_TOKEN_TTL);
-            redisTemplate.opsForValue().set(infoKey, info, REFRESH_TOKEN_TTL);
-        }
+        // 直接存储对象，RedisTemplate 会自动序列化为 JSON 并添加 @class 类型信息
+        redisTemplate.opsForValue().set(refreshTokenKey, refreshToken, REFRESH_TOKEN_TTL);
+        redisTemplate.opsForValue().set(infoKey, info, REFRESH_TOKEN_TTL);
 
         // 步骤4: 返回结果
         int expireIn = jwtConfig.getAccessTokenExpire().intValue();
@@ -269,8 +230,10 @@ public class TokenServiceImpl implements TokenService {
         }
 
         // 直接获取 RefreshTokenInfo 对象，自动反序列化
+        // RedisConfig 中配置的 activateDefaultTypingAsProperty 确保正确反序列化
         RefreshTokenInfo storedInfo = (RefreshTokenInfo) redisTemplate.opsForValue().get(infoKey);
-        if (storedInfo == null) {
+
+        if (storedInfo == null || storedInfo.getUserId() == null) {
             throw new AuthException(1010, "RefreshToken 已失效,请重新登录");
         }
 

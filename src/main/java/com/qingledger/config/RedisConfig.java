@@ -1,6 +1,7 @@
 package com.qingledger.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -46,8 +47,15 @@ public class RedisConfig {
         // 配置 ObjectMapper 以支持 Java 8 日期时间类型
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
+        objectMapper.activateDefaultTypingAsProperty(
+                LaissezFaireSubTypeValidator.instance,
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                "@class"
+        );
 
-        // 使用配置了 ObjectMapper 的 GenericJackson2JsonRedisSerializer
+
+        // 重要：使用包名前缀类型处理器,强制写入类型信息
+        // 这样所有对象都会包含 @class 字段,确保正确反序列化
         GenericJackson2JsonRedisSerializer jsonSerializer =
             new GenericJackson2JsonRedisSerializer(objectMapper);
 
