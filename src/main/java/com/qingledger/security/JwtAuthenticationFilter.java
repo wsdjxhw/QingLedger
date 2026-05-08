@@ -133,20 +133,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             log.debug("JWT 认证成功: userId={}", userId);
 
+            // 步骤7: 继续过滤器链
+            filterChain.doFilter(request, response);
+
         } catch (AuthException e) {
             // Token 验证失败（过期、无效等）
             log.debug("JWT Token 验证失败: {}", e.getMessage());
+            // 即使 Token 验证失败，也继续过滤器链（让 Spring Security 处理）
+            filterChain.doFilter(request, response);
         } catch (Exception e) {
             // 其他异常（如数据库查询失败）
             log.error("JWT 认证过程中发生异常", e);
+            // 发生异常时，仍然继续过滤器链
+            filterChain.doFilter(request, response);
         } finally {
-            // 步骤7: 继续过滤器链
-            try {
-                filterChain.doFilter(request, response);
-            } finally {
-                // 步骤8: 请求结束后清理 ThreadLocal（防止内存泄漏）
-                UserContext.clear();
-            }
+            // 步骤8: 请求结束后清理 ThreadLocal（防止内存泄漏）
+            UserContext.clear();
         }
     }
 }

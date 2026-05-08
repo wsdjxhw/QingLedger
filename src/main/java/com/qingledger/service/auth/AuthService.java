@@ -56,4 +56,30 @@ public interface AuthService {
      * @return Result
      */
     Result<String> refreshToken(String refreshToken);
+
+    /**
+     * 绑定邮箱
+     * @param userId 用户ID
+     * @param email 邮箱
+     * @param code 验证码
+     * @return Result
+     */
+    Result<Void> bindEmail(Long userId, String email, String code);
+
+    /**
+     * 解绑登录方式
+     * @param userId 用户ID
+     * @param authType 认证类型（PHONE/EMAIL）
+     * @return Result
+     */
+    Result<Void> unbind(Long userId, String authType);
+
+    /**
+     * 修改密码
+     * @param userId 用户ID
+     * @param oldPassword 旧密码
+     * @param newPassword 新密码
+     * @return Result
+     */
+    Result<Void> changePassword(Long userId, String oldPassword, String newPassword);
 }

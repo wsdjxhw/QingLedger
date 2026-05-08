@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 认证服务实现
@@ -202,14 +203,19 @@ public class AuthServiceImpl implements AuthService {
 
         // 查找用户认证信息
         UserAuth userAuth = findUserAuthByAccount(account);
+        log.debug("查询结果: userAuth={}", userAuth);
         if (userAuth == null) {
+            log.warn("用户认证信息未找到: account={}", account);
             return Result.fail("账号或密码错误");
         }
 
         // 验证密码
+        log.debug("开始验证密码: userId={}", userAuth.getUserId());
         if (!passwordEncoder.matches(password, userAuth.getPassword())) {
+            log.warn("密码验证失败: account={}", account);
             return Result.fail("账号或密码错误");
         }
+        log.debug("密码验证成功");
 
         // 检查用户状态
         User user = userMapper.selectById(userAuth.getUserId());
@@ -330,6 +336,63 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    @Override
+    @Transactional
+    public Result<Void> bindEmail(Long userId, String email, String code) {
+        log.info("绑定邮箱请求: userId={}, Email={}", userId, email);
+        //校验验证码
+        try{
+            if(!verificationService.verifyCode(AUTH_TYPE_EMAIL,email,code)){
+                return Result.fail("验证码错误或已失效");
+            }
+        }catch(Exception e){
+            log.error("验证码校验失败",e);
+            return Result.fail("验证码校验失败: " + e.getMessage());
+        }
+        UserAuth userAuth = findUserAuthByPhoneOrEmail(email);
+        if (userAuth != null) {
+            if(userAuth.getUserId().equals(userId)){
+                return Result.fail("当前邮箱已绑定到当前账号");
+            }else{
+                return Result.fail("该邮箱已被其他用户绑定");
+            }
+        }
+
+        List<UserAuth> userAuths = userAuthMapper.selectList(new QueryWrapper<UserAuth>().eq("user_id", userId));
+        String password = null;
+        for(UserAuth UA : userAuths){
+            if(UA.getAuthType().equals(AUTH_TYPE_EMAIL)){
+                return Result.fail("当前账号已经绑定邮箱,请勿重复绑定");
+            }
+            if(UA.getPassword() != null){
+                password = UA.getPassword();
+            }
+        }
+
+        UserAuth newUserAuth = new UserAuth();
+        newUserAuth.setUserId(userId);
+        newUserAuth.setAuthType(AUTH_TYPE_EMAIL);
+        newUserAuth.setIdentifier(email);
+        newUserAuth.setPassword(password);
+        newUserAuth.setVerified(true);
+        newUserAuth.setIsPrimary(false);
+        newUserAuth.setBindAt(LocalDateTime.now());
+        userAuthMapper.insert(newUserAuth);
+
+        log.info("邮箱绑定成功: userId={}, email={}", userId, email);
+        return Result.ok();
+    }
+
+    @Override
+    public Result<Void> unbind(Long userId, String authType) {
+        return null;
+    }
+
+    @Override
+    public Result<Void> changePassword(Long userId, String oldPassword, String newPassword) {
+        return null;
+    }
+
     /**
      * 校验目标格式（手机号或邮箱）
      */
@@ -374,15 +437,13 @@ public class AuthServiceImpl implements AuthService {
      */
     private UserAuth findUserAuthByAccount(String account) {
         QueryWrapper<UserAuth> wrapper = new QueryWrapper<>();
-        wrapper.and(w -> w.eq("auth_type", AUTH_TYPE_USERNAME)
-                          .eq("identifier", account)
-                          .or()
-                          .eq("auth_type", AUTH_TYPE_PHONE)
-                          .eq("identifier", account)
-                          .or()
-                          .eq("auth_type", AUTH_TYPE_EMAIL)
-                          .eq("identifier", account));
-        return userAuthMapper.selectOne(wrapper);
+        wrapper.and(w -> w
+                .and(w1 -> w1.eq("auth_type", AUTH_TYPE_USERNAME).eq("identifier", account))
+                .or(w2 -> w2.eq("auth_type", AUTH_TYPE_PHONE).eq("identifier", account))
+                .or(w3 -> w3.eq("auth_type", AUTH_TYPE_EMAIL).eq("identifier", account))
+        );
+        List<UserAuth> results = userAuthMapper.selectList(wrapper);
+        return results.isEmpty() ? null : results.get(0);
     }
 
     /**

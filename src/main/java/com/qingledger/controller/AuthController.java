@@ -257,8 +257,11 @@ public class AuthController {
             Long userId = jwtUtil.getUserId(accessToken);
             log.info("绑定邮箱请求: userId={}, email={}", userId, req.getEmail());
 
-            // TODO: 实现绑定邮箱逻辑
-            return Result.fail("功能开发中");
+            String email = req.getEmail();
+            String code = req.getCode();
+            authService.bindEmail(userId,email,code);
+
+            return Result.ok();
         } catch (Exception e) {
             log.error("绑定邮箱失败", e);
             return Result.fail("绑定邮箱失败: " + e.getMessage());
