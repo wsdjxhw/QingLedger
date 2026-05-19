@@ -288,16 +288,15 @@ public class AuthController {
     /**
      * 解绑登录方式
      */
-    @Operation(summary = "解绑登录方式", description = "解绑手机号或邮箱", security = @SecurityRequirement(name = "JWT"))
-    @DeleteMapping("/unbind/{type}")
-    public Result<Void> unbind(HttpServletRequest request, @PathVariable String type) {
+    @Operation(summary = "解绑登录方式", description = "解绑手机号或邮箱(需密码二次验证)", security = @SecurityRequirement(name = "JWT"))
+    @DeleteMapping("/unbind")
+    public Result<Void> unbind(HttpServletRequest request, @Valid @RequestBody UnbindRequest req) {
         try {
             String accessToken = extractToken(request);
             Long userId = jwtUtil.getUserId(accessToken);
-            log.info("解绑登录方式请求: userId={}, type={}", userId, type);
+            log.info("解绑登录方式请求: userId={}, authType={}", userId, req.getAuthType());
 
-            // TODO: 实现解绑逻辑
-            return Result.fail("功能开发中");
+            return authService.unbind(userId, req.getAuthType(), req.getPassword());
         } catch (Exception e) {
             log.error("解绑失败", e);
             return Result.fail("解绑失败: " + e.getMessage());

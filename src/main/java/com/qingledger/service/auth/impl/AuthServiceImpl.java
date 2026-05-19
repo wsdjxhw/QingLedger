@@ -429,8 +429,59 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public Result<Void> unbind(Long userId, String authType) {
-        return null;
+    @Transactional
+    public Result<Void> unbind(Long userId, String authType, String password) {
+        log.info("解绑登录方式请求: userId={}, authType={}", userId, authType);
+
+        // 1. 参数校验：authType 必须是 PHONE 或 EMAIL
+        if (!AUTH_TYPE_PHONE.equals(authType) && !AUTH_TYPE_EMAIL.equals(authType)) {
+            return Result.fail("认证类型必须是 PHONE 或 EMAIL");
+        }
+
+        // 2. 查询该用户所有 UserAuth 记录
+        List<UserAuth> userAuths = userAuthMapper.selectList(
+                new QueryWrapper<UserAuth>().eq("user_id", userId));
+
+        // 3. 检查最后一条保护：用户绑定数 <= 1 时拒绝解绑
+        if (userAuths.size() <= 1) {
+            return Result.fail("至少保留一种登录方式,请先绑定新的登录方式");
+        }
+
+        // 4. 查找待解绑的目标记录
+        UserAuth targetAuth = null;
+        for (UserAuth ua : userAuths) {
+            if (authType.equals(ua.getAuthType())) {
+                targetAuth = ua;
+                break;
+            }
+        }
+        if (targetAuth == null) {
+            return Result.fail("未找到该认证方式");
+        }
+
+        // 5. 密码校验
+        if (!passwordEncoder.matches(password, targetAuth.getPassword())) {
+            log.warn("解绑密码验证失败: userId={}, authType={}", userId, authType);
+            return Result.fail("密码错误");
+        }
+
+        // 6. 处理主账号：若待删除记录是主账号,则将剩余的第一条设为主账号
+        if (Boolean.TRUE.equals(targetAuth.getIsPrimary())) {
+            for (UserAuth ua : userAuths) {
+                if (!ua.getId().equals(targetAuth.getId())) {
+                    ua.setIsPrimary(true);
+                    userAuthMapper.updateById(ua);
+                    log.info("主账号已转移: userId={}, newPrimaryAuthType={}", userId, ua.getAuthType());
+                    break;
+                }
+            }
+        }
+
+        // 7. 执行删除
+        userAuthMapper.deleteById(targetAuth.getId());
+
+        log.info("解绑成功: userId={}, authType={}", userId, authType);
+        return Result.ok();
     }
 
     @Override

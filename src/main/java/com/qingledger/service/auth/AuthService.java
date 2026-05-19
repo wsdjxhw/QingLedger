@@ -79,9 +79,10 @@ public interface AuthService {
      * 解绑登录方式
      * @param userId 用户ID
      * @param authType 认证类型（PHONE/EMAIL）
+     * @param password 用户当前密码（用于二次身份验证）
      * @return Result
      */
-    Result<Void> unbind(Long userId, String authType);
+    Result<Void> unbind(Long userId, String authType, String password);
 
     /**
      * 修改密码
