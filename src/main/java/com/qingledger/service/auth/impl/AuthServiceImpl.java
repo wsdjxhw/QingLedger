@@ -351,11 +351,7 @@ public class AuthServiceImpl implements AuthService {
         }
         UserAuth userAuth = findUserAuthByPhoneOrEmail(email);
         if (userAuth != null) {
-            if(userAuth.getUserId().equals(userId)){
-                return Result.fail("当前邮箱已绑定到当前账号");
-            }else{
-                return Result.fail("该邮箱已被其他用户绑定");
-            }
+            return Result.fail("该邮箱已被绑定");
         }
 
         List<UserAuth> userAuths = userAuthMapper.selectList(new QueryWrapper<UserAuth>().eq("user_id", userId));
@@ -377,9 +373,58 @@ public class AuthServiceImpl implements AuthService {
         newUserAuth.setVerified(true);
         newUserAuth.setIsPrimary(false);
         newUserAuth.setBindAt(LocalDateTime.now());
+
         userAuthMapper.insert(newUserAuth);
 
         log.info("邮箱绑定成功: userId={}, email={}", userId, email);
+        return Result.ok();
+    }
+
+    @Override
+    @Transactional
+    public Result<Void> bindPhone(Long userId, String phone, String code) {
+        log.info("绑定手机号请求: userId={}, phone={}", userId, phone);
+
+        // 参考邮箱绑定的实现步骤:
+        // 1. 校验验证码
+        try{
+            if(!verificationService.verifyCode(AUTH_TYPE_PHONE,phone,code)){
+                return Result.fail("验证码错误或已失效");
+            }
+        }catch(Exception e){
+            log.error("验证码校验失败",e);
+            return Result.fail("验证码校验失败: " + e.getMessage());
+        }
+        // 2. 检查手机号是否已被绑定
+        UserAuth userAuth = findUserAuthByPhoneOrEmail(phone);
+        if(userAuth != null){
+            return Result.fail("该手机号已被绑定");
+        }
+        // 3. 检查当前账号是否已绑定手机号
+        List<UserAuth> userAuths = userAuthMapper.selectList(new QueryWrapper<UserAuth>().eq("user_id", userId));
+        String password = null;
+        for(UserAuth UA : userAuths){
+            if(UA.getAuthType().equals(AUTH_TYPE_PHONE)){
+                return Result.fail("当前账号已经绑定手机号,请勿重复绑定");
+            }
+            // 4. 获取现有密码（密码继承逻辑）
+            if(UA.getPassword() != null){
+                password = UA.getPassword();
+            }
+        }
+        // 5. 创建新的 UserAuth 记录
+        UserAuth newUserAuth = new UserAuth();
+        newUserAuth.setUserId(userId);
+        newUserAuth.setAuthType(AUTH_TYPE_PHONE);
+        newUserAuth.setIdentifier(phone);
+        newUserAuth.setPassword(password);
+        newUserAuth.setVerified(true);
+        newUserAuth.setIsPrimary(false);
+        newUserAuth.setBindAt(LocalDateTime.now());
+
+        userAuthMapper.insert(newUserAuth);
+        // 6. 记录日志并返回成功
+        log.info("手机号绑定成功: userId={}, phone={}", userId, phone);
         return Result.ok();
     }
 

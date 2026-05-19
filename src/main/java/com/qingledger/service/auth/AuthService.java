@@ -67,6 +67,15 @@ public interface AuthService {
     Result<Void> bindEmail(Long userId, String email, String code);
 
     /**
+     * 绑定手机号
+     * @param userId 用户ID
+     * @param phone 手机号
+     * @param code 验证码
+     * @return Result
+     */
+    Result<Void> bindPhone(Long userId, String phone, String code);
+
+    /**
      * 解绑登录方式
      * @param userId 用户ID
      * @param authType 认证类型（PHONE/EMAIL）

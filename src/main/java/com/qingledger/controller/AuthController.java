@@ -259,12 +259,29 @@ public class AuthController {
 
             String email = req.getEmail();
             String code = req.getCode();
-            authService.bindEmail(userId,email,code);
 
-            return Result.ok();
+            return authService.bindEmail(userId,email,code);
         } catch (Exception e) {
             log.error("绑定邮箱失败", e);
             return Result.fail("绑定邮箱失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 绑定手机号
+     */
+    @Operation(summary = "绑定手机号", description = "绑定手机号到当前账号", security = @SecurityRequirement(name = "JWT"))
+    @PostMapping("/bind/phone")
+    public Result<Void> bindPhone(HttpServletRequest request, @Valid @RequestBody BindPhoneRequest req) {
+        try {
+            String accessToken = extractToken(request);
+            Long userId = jwtUtil.getUserId(accessToken);
+            log.info("绑定手机号请求: userId={}, phone={}", userId, req.getPhone());
+
+            return  authService.bindPhone(userId, req.getPhone(), req.getCode());
+        } catch (Exception e) {
+            log.error("绑定手机号失败", e);
+            return Result.fail("绑定手机号失败: " + e.getMessage());
         }
     }
 
