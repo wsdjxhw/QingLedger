@@ -157,6 +157,8 @@ DTO `ChangePasswordRequest` 已存在(oldPassword + newPassword 6-20 位),无需
 - **修改前后密码完全相同** → 拦截,引导用户使用真正的新密码
 - **当前设备 accessToken 中无 refreshTokenId(老 token)** → Controller 调用 `revokeAllRefreshTokensExcept` 时 keepTokenId 可能为 null,实现需对 null 友好处理(此场景下扫描结果不会匹配 null,等同于全部踢掉)
 - **Redis SCAN 期间有新会话产生** → SCAN 是增量游标,可能漏扫新增 key,但新登录的会话本就不应被踢,无影响
+- **新旧密码相同但旧密码错误** → 由于"新旧密码相同"校验在前,会优先报"新密码不能与旧密码相同"。这是预期行为,无需调整顺序
+- **DB 提交后 Redis 踢线失败** → 密码已成功修改,踢其他设备的 Redis 操作采用"best-effort"语义:失败时仅记日志,不回滚密码、不返回错误。已签发的 accessToken 也最多在 2 小时内自然过期
 
 ## 安全考虑
 
