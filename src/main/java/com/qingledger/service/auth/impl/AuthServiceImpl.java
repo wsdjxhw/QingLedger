@@ -1,6 +1,7 @@
 package com.qingledger.service.auth.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.qingledger.entity.User;
 import com.qingledger.entity.UserAuth;
 import com.qingledger.common.Result;
@@ -485,8 +486,39 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
     public Result<Void> changePassword(Long userId, String oldPassword, String newPassword) {
-        return null;
+        log.info("修改密码请求: userId={}", userId);
+
+        // 1. 校验新旧密码不相同(在 DB 查询之前拦截)
+        if (oldPassword != null && oldPassword.equals(newPassword)) {
+            return Result.fail("新密码不能与旧密码相同");
+        }
+
+        // 2. 查询该用户所有 UserAuth 记录
+        List<UserAuth> userAuths = userAuthMapper.selectList(
+                new QueryWrapper<UserAuth>().eq("user_id", userId));
+
+        // 3. 用户不存在(无任何 UserAuth)
+        if (userAuths.isEmpty()) {
+            return Result.fail("用户不存在");
+        }
+
+        // 4. 用第一条记录的 password 做 BCrypt 校验旧密码
+        //    (该用户所有 UserAuth.password 已通过本接口同步,任意一条均可,固定取第一条以消除歧义)
+        UserAuth firstAuth = userAuths.get(0);
+        if (!passwordEncoder.matches(oldPassword, firstAuth.getPassword())) {
+            log.warn("修改密码-旧密码错误: userId={}", userId);
+            return Result.fail("旧密码错误");
+        }
+
+        // 5. 单 SQL 条件更新该用户全部 UserAuth.password,避免逐条 update 造成部分成功
+        String encoded = passwordEncoder.encode(newPassword);
+        userAuthMapper.update(null,
+                new UpdateWrapper<UserAuth>().set("password", encoded).eq("user_id", userId));
+
+        log.info("修改密码成功: userId={}", userId);
+        return Result.ok();
     }
 
     /**

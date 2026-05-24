@@ -9,7 +9,9 @@ import com.qingledger.utils.IpUtil;
 import com.qingledger.utils.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -275,6 +277,31 @@ public class TokenServiceImpl implements TokenService {
         String infoKey = "refresh_token_info:" + userId + ":" + tokenId;
         redisTemplate.delete(key);
         redisTemplate.delete(infoKey);
+    }
+
+    @Override
+    public void revokeAllRefreshTokensExcept(Long userId, String keepTokenId) {
+        // 使用 SCAN 增量扫描该用户所有 refresh_token key,避免阻塞 Redis(KEYS 在生产环境会阻塞)
+        String pattern = "refresh_token:" + userId + ":*";
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(100).build();
+
+        try (Cursor<String> cursor = redisTemplate.scan(options)) {
+            while (cursor.hasNext()) {
+                String key = cursor.next();
+                // key 形如 refresh_token:{userId}:{tokenId},取末段 tokenId
+                int lastColon = key.lastIndexOf(':');
+                if (lastColon < 0 || lastColon == key.length() - 1) {
+                    continue;
+                }
+                String tokenId = key.substring(lastColon + 1);
+                if (keepTokenId != null && keepTokenId.equals(tokenId)) {
+                    continue;
+                }
+                // 删除该 token 的 refresh_token 与 refresh_token_info 两组 key
+                redisTemplate.delete(key);
+                redisTemplate.delete("refresh_token_info:" + userId + ":" + tokenId);
+            }
+        }
     }
 
     /**

@@ -118,6 +118,26 @@ public interface TokenService {
     void revokeRefreshToken(Long userId, String tokenId);
 
     /**
+     * 废除指定用户除 keepTokenId 外的全部 RefreshToken
+     *
+     * 功能：
+     * - 通过 Redis SCAN 遍历该用户所有 refresh_token:{userId}:* key
+     * - 跳过 keepTokenId 对应的记录
+     * - 删除其他 token 的 refresh_token 与 refresh_token_info 两组 key
+     *
+     * 使用场景：
+     * - 修改密码后踢掉其他设备会话,保留当前设备
+     *
+     * 边界：
+     * - keepTokenId == null 时全量删除该用户所有 RefreshToken（老 token 兼容场景）
+     * - 该用户没有任何 token 时不报错
+     *
+     * @param userId 用户ID
+     * @param keepTokenId 需要保留的 tokenId,可为 null
+     */
+    void revokeAllRefreshTokensExcept(Long userId, String keepTokenId);
+
+    /**
      * 解析 Access Token 获取用户ID
      *
      * 功能：

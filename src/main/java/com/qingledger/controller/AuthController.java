@@ -312,10 +312,23 @@ public class AuthController {
         try {
             String accessToken = extractToken(request);
             Long userId = jwtUtil.getUserId(accessToken);
+            //获取设备的token
+            String currentTokenId = jwtUtil.getRefreshTokenId(accessToken);
             log.info("修改密码请求: userId={}", userId);
 
-            // TODO: 实现修改密码逻辑
-            return Result.fail("功能开发中");
+            Result<Void> result = authService.changePassword(userId, req.getOldPassword(), req.getNewPassword());
+
+            // 改密成功后,best-effort 踢掉其他设备会话(保留当前设备)
+            // 踢线失败仅记录日志,不回滚密码,不改变接口成功结果
+            if (result.getCode() == 200) {
+                try {
+                    tokenService.revokeAllRefreshTokensExcept(userId, currentTokenId);
+                } catch (Exception e) {
+                    log.error("修改密码后踢线失败(best-effort): userId={}", userId, e);
+                }
+            }
+
+            return result;
         } catch (Exception e) {
             log.error("修改密码失败", e);
             return Result.fail("修改密码失败: " + e.getMessage());
