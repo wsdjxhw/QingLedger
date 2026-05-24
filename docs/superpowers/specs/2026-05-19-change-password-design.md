@@ -2,18 +2,35 @@
 
 ## 概述
 
-为已登录用户提供修改密码功能。用户输入旧密码进行二次身份验证后,设置新密码。修改成功后,该用户在其他设备上的会话将被强制下线,当前设备的会话保留。
+为已登录用户提供修改密码功能。用户输入旧密码进行二次身份验证后设置新密码。修改成功后,该用户在其他设备上的会话将被强制下线,当前设备会话保留。
+
+## 范围边界
+
+本任务范围:
+
+- 修改密码核心逻辑（校验旧密码、更新新密码）。
+- 踢掉其他设备 refreshToken（保留当前设备 refreshToken）。
+
+非本任务范围:
+
+- `passwordVersion/passwordChangedAt` 全局 token 失效机制。
+- 限流基础设施（`userId + IP` 维度计数等）。
+- 安全审计体系（审计表、审计服务）。
+- `traceId` 响应字段体系改造。
+- 异步补偿任务/调度器/消息队列方案。
+- 全项目 HTTP 状态码风格改造。
 
 ## 设计决策
 
 | 决策 | 选择 |
 |------|------|
-| 二次验证方式 | 旧密码（BCrypt）|
-| 新密码格式 | 6-20 位（DTO 已配置 @Size）|
-| 新旧密码相同 | 拦截,报错"新密码不能与旧密码相同" |
-| 密码同步策略 | 该用户所有 UserAuth 记录的 password 字段一起更新 |
-| 会话处理 | 踢掉其他设备的 RefreshToken,保留当前会话 |
-| 错误信息粒度 | 明确区分（旧密码错误 / 用户不存在 / 新旧密码相同 等）|
+| 二次验证方式 | 旧密码（BCrypt） |
+| 新密码格式 | 6-20 位（DTO 已配置 `@Size`） |
+| 新旧密码相同 | 拦截,返回业务错误 |
+| 密码同步策略 | 该用户所有 `UserAuth` 记录的 `password` 字段一起更新 |
+| 会话处理 | 踢掉其他设备 `RefreshToken`,保留当前会话（`keepTokenId = null` 的老 token 场景除外） |
+| 响应结构 | 沿用统一 `Result{code,message,data}` |
+| HTTP 状态码 | 沿用现状: 接口统一返回 HTTP 200,业务结果看 `Result.code` |
 
 ## 接口
 
@@ -25,8 +42,8 @@ Authorization: Bearer <accessToken>
 Content-Type: application/json
 
 {
-    "oldPassword": "旧密码",
-    "newPassword": "新密码"
+  "oldPassword": "旧密码",
+  "newPassword": "新密码"
 }
 ```
 
@@ -34,9 +51,9 @@ Content-Type: application/json
 
 ```json
 {
-    "code": 200,
-    "message": "success",
-    "data": null
+  "code": 200,
+  "message": "操作成功",
+  "data": null
 }
 ```
 
@@ -44,9 +61,9 @@ Content-Type: application/json
 
 ```json
 {
-    "code": xxx,
-    "message": "错误描述",
-    "data": null
+  "code": 500,
+  "message": "旧密码错误",
+  "data": null
 }
 ```
 
@@ -54,47 +71,71 @@ Content-Type: application/json
 
 ### 前置条件
 
-- 用户已登录（通过 JWT Filter 保护）
-- accessToken 中携带 refreshTokenId(由 `JwtUtil.generateAccessToken(userId, tokenId)` 在登录时嵌入)
+- 用户已登录（通过 JWT Filter 保护）。
+- accessToken 中携带 `refreshTokenId`（由 `JwtUtil.generateAccessToken(userId, tokenId)` 在登录时嵌入）。
 
 ### Service 层流程: `changePassword(userId, oldPassword, newPassword)`
 
-1. 校验新旧密码不相同（明文 equals 比对）, 相同则返回"新密码不能与旧密码相同"
-2. 查询该用户所有 UserAuth 记录（`SELECT * FROM user_auth WHERE user_id = ?`)
-3. 若记录列表为空 → 返回"用户不存在"
-4. 用任意一条记录的 password 字段做 BCrypt 校验旧密码: `passwordEncoder.matches(oldPassword, anyAuth.getPassword())`,失败则返回"旧密码错误"
-5. 对新密码进行 BCrypt 加密
-6. 遍历所有 UserAuth 记录,更新 password 字段为新加密密码,逐条 `userAuthMapper.updateById()`
-7. 返回 `Result.ok()`
+1. 校验入参（DTO 校验）。
+2. 校验新旧密码不相同（明文 equals 比对）,相同则返回业务错误。
+3. 查询该用户所有 `UserAuth` 记录（`SELECT * FROM user_auth WHERE user_id = ?`）。
+4. 若记录列表为空 → 返回“用户不存在”。
+5. 固定使用查询结果第一条记录的 `password` 做 BCrypt 校验旧密码: `passwordEncoder.matches(oldPassword, userAuthList.get(0).getPassword())`。
+6. 若旧密码错误 → 返回业务错误。
+7. 对新密码进行 BCrypt 加密。
+8. 更新该用户所有 `UserAuth.password`。
+9. 返回 `Result.ok()`。
+
+实现约束:
+
+- `AuthServiceImpl.changePassword` 使用 `@Transactional`。
+- 第 8 步采用单 SQL 条件更新,避免逐条 `updateById()` 造成部分成功:
+`userAuthMapper.update(null, new UpdateWrapper<UserAuth>().set("password", encoded).eq("user_id", userId))`。
 
 ### Controller 层流程: `changePassword(request, req)`
 
-1. 从请求头提取 accessToken
-2. 通过 `jwtUtil.getUserId(accessToken)` 取 userId
-3. 通过 `jwtUtil.getRefreshTokenId(accessToken)` 取当前会话的 refreshTokenId
-4. 调用 `authService.changePassword(userId, req.getOldPassword(), req.getNewPassword())`
-5. 若 service 返回 ok → 调用 `tokenService.revokeAllRefreshTokensExcept(userId, currentTokenId)` 踢掉其他设备
-6. 返回 service 的结果（业务失败时直接透传错误消息,不踢会话）
-7. 整体用 try-catch 包裹,统一捕获异常返回"修改密码失败: ..."
+1. 从请求头提取 accessToken。
+2. 通过 `jwtUtil.getUserId(accessToken)` 取 `userId`。
+3. 通过 `jwtUtil.getRefreshTokenId(accessToken)` 取当前会话 `refreshTokenId`。
+4. 调用 `authService.changePassword(userId, req.getOldPassword(), req.getNewPassword())`。
+5. 若 service 返回 ok → 调用 `tokenService.revokeAllRefreshTokensExcept(userId, currentTokenId)` 踢掉其他设备。
+6. 若踢线失败: 仅记录日志,不回滚密码,不改变接口成功结果（best-effort）。
+7. 返回 service 的结果。
 
 ### 流程图
 
 ```
-[请求] → 提取 accessToken → 取 userId + refreshTokenId
-    ↓
-    Service: 新旧密码相同? → [是] → 报错
-    ↓ 否
-    查所有 UserAuth → 无记录? → [是] → 报错"用户不存在"
-    ↓ 否
-    旧密码匹配? → [否] → 报错"旧密码错误"
-    ↓ 是
-    加密新密码 → 更新所有 UserAuth.password
-    ↓
-    返回 ok
-    ↓
-    Controller: 踢其他设备会话(保留当前 refreshTokenId)
-    ↓
-    返回成功
+[请求] -> 提取 accessToken -> 取 userId + refreshTokenId
+    |
+    v
+Service: 校验入参 -> 新旧密码相同?
+    | 是
+    v
+  返回业务错误
+    | 否
+    v
+查询 UserAuth -> 空记录?
+    | 是
+    v
+  返回"用户不存在"
+    | 否
+    v
+旧密码匹配?
+    | 否
+    v
+  返回"旧密码错误"
+    | 是
+    v
+加密新密码 -> 条件更新该用户全部 UserAuth.password
+    |
+    v
+返回 ok
+    |
+    v
+Controller: 踢其他设备 refreshToken(保留当前会话)
+    |
+    v
+返回成功
 ```
 
 ## 会话踢线机制
@@ -104,18 +145,19 @@ Content-Type: application/json
 每次登录,`TokenServiceImpl.generateTokens()` 会先生成 refreshToken 拿到 tokenId(UUID),再用 `jwtUtil.generateAccessToken(userId, tokenId)` 把 tokenId 嵌入 accessToken claims。因此每个 accessToken 都能反查出自己对应的 refreshTokenId。
 
 Redis 存储结构:
-- `refresh_token:{userId}:{tokenId}` → refreshToken 字符串
-- `refresh_token_info:{userId}:{tokenId}` → RefreshTokenInfo 对象
 
-同一个 userId 可能在 Redis 中有多条 tokenId 记录(多设备登录)。
+- `refresh_token:{userId}:{tokenId}` -> refreshToken 字符串
+- `refresh_token_info:{userId}:{tokenId}` -> RefreshTokenInfo 对象
+
+同一个 `userId` 可能在 Redis 中有多条 `tokenId` 记录（多设备登录）。
 
 ### 新增方法: `revokeAllRefreshTokensExcept(Long userId, String keepTokenId)`
 
 实现思路:
 
-1. 用 Redis `SCAN` 命令(`ScanOptions.match("refresh_token:" + userId + ":*")`)增量扫描该用户的所有 refreshToken key
-2. 解析 key 末段拿到 tokenId
-3. 跳过 `keepTokenId`,删除其他 key 及对应的 `refresh_token_info:{userId}:{tokenId}`
+1. 用 Redis `SCAN` 命令（`ScanOptions.match("refresh_token:" + userId + ":*")`）增量扫描该用户所有 refreshToken key。
+2. 解析 key 末段拿到 `tokenId`。
+3. 跳过 `keepTokenId`,删除其他 key 及对应的 `refresh_token_info:{userId}:{tokenId}`。
 
 不使用 `KEYS` 命令,因为它在生产环境会阻塞 Redis。
 
@@ -124,45 +166,63 @@ Redis 存储结构:
 | 设备 | 状态 |
 |------|------|
 | 当前设备 | refreshToken 保留,可正常刷新,不被踢 |
-| 其他设备的 refreshToken | 已被删除,刷新时命中"RefreshToken 已失效"而被迫重新登录 |
-| 其他设备已签发的 accessToken | 由于 JWT 无法吊销,会话最长保留至 accessToken 过期(约 2 小时),此为 JWT 方案的天然代价 |
+| 其他设备的 refreshToken | 已被删除,刷新时命中“RefreshToken 已失效”并被迫重新登录 |
+| 其他设备已签发的 accessToken | 由于 JWT 无法主动吊销,最长保留到 accessToken 自然过期（约 2 小时） |
+
+## 错误码与响应约定
+
+约束:
+
+- 保持现有响应结构: `Result{code,message,data}`。
+- 保持现有传输约定: HTTP 200 + 业务码。
+- 保持与现有 `AuthServiceImpl` 一致: 业务分支直接 `return Result.fail(message)`。
+- 改密业务失败（旧密码错误/新旧密码相同/用户不存在）统一返回 `code = 500` + 对应 `message`。
+- `AuthException` 的 `1008-1012` 保持用于 token 相关异常,本接口不新增/不复用该码段。
+
+## 边界情况
+
+- 用户绑了多种登录方式（手机+邮箱） -> 所有 `UserAuth` 记录同步更新。
+- 用户只有一种登录方式 -> 正常修改,仅更新一条。
+- 修改前后密码完全相同 -> 拦截并返回业务错误。
+- 当前设备 accessToken 中无 `refreshTokenId`（老 token） -> `keepTokenId = null` 时等同全量踢线（此场景下“保留当前会话”承诺不成立,当前设备也可能被踢出）。
+- Redis SCAN 期间有新会话产生 -> 可能漏扫新 key,该行为接受（best-effort）。
+- DB 提交后 Redis 踢线失败 -> 密码修改成功,仅记录日志。
+
+## 安全考虑
+
+- 旧密码校验防止 accessToken 被盗后任意改密。
+- 改密后踢掉其他 refreshToken,降低长期会话被滥用风险。
+- 保留当前会话,避免用户主动操作后被自己踢出。
 
 ## 涉及文件
 
 | 文件 | 改动类型 | 说明 |
 |------|---------|------|
 | `service/auth/impl/AuthServiceImpl.java` | 修改 | 实现 `changePassword`,加 `@Transactional` |
-| `service/auth/TokenService.java` | 修改 | 新增 `revokeAllRefreshTokensExcept(Long userId, String keepTokenId)` 接口方法 |
-| `service/auth/impl/TokenServiceImpl.java` | 修改 | 实现新增方法,基于 RedisTemplate.scan() |
-| `controller/AuthController.java` | 修改 | 替换 `password/change` 端点的"功能开发中"占位符 |
+| `service/auth/TokenService.java` | 修改 | 新增 `revokeAllRefreshTokensExcept(Long userId, String keepTokenId)` |
+| `service/auth/impl/TokenServiceImpl.java` | 修改 | 基于 Redis `SCAN` 实现踢线 |
+| `controller/AuthController.java` | 修改 | 实现 `password/change` 端点 |
 
-DTO `ChangePasswordRequest` 已存在(oldPassword + newPassword 6-20 位),无需改动。
+DTO `ChangePasswordRequest` 已存在（`oldPassword + newPassword` 6-20 位）,无需改动。
 
-## 错误码 / 错误消息
+## 测试与验收
 
-| 场景 | 消息 | 触发位置 |
-|------|------|---------|
-| oldPassword 为空 | 旧密码不能为空 | DTO `@NotBlank` |
-| newPassword 为空 | 新密码不能为空 | DTO `@NotBlank` |
-| newPassword 长度不合法 | 密码长度必须在6-20位之间 | DTO `@Size` |
-| 新旧密码相同 | 新密码不能与旧密码相同 | Service 层 |
-| 用户不存在 | 用户不存在 | Service 层 |
-| 旧密码错误 | 旧密码错误 | Service 层 |
-| 其他异常 | 修改密码失败: ... | Controller 层 try-catch |
+最小测试矩阵:
 
-## 边界情况
+1. 单元测试:
+- 新旧密码相同返回业务错误。
+- 旧密码错误返回业务错误。
+- `keepTokenId = null` 时执行全量踢线。
+2. 集成测试:
+- 多设备登录后改密,仅当前设备可继续刷新。
+- 其他设备 refreshToken 刷新失败。
+- Redis 踢线失败时接口仍返回改密成功（并有错误日志）。
+3. 并发测试:
+- 同用户并发改密时,最终 `UserAuth` 密码一致。
+- 并发改密语义采用 last-write-wins（后写覆盖前写）,该语义被接受。
 
-- **用户绑了多种登录方式(手机+邮箱)** → 所有 UserAuth 记录的 password 字段同步更新
-- **用户只有一种登录方式** → 同样能修改,只更新一条记录
-- **修改前后密码完全相同** → 拦截,引导用户使用真正的新密码
-- **当前设备 accessToken 中无 refreshTokenId(老 token)** → Controller 调用 `revokeAllRefreshTokensExcept` 时 keepTokenId 可能为 null,实现需对 null 友好处理(此场景下扫描结果不会匹配 null,等同于全部踢掉)
-- **Redis SCAN 期间有新会话产生** → SCAN 是增量游标,可能漏扫新增 key,但新登录的会话本就不应被踢,无影响
-- **新旧密码相同但旧密码错误** → 由于"新旧密码相同"校验在前,会优先报"新密码不能与旧密码相同"。这是预期行为,无需调整顺序
-- **DB 提交后 Redis 踢线失败** → 密码已成功修改,踢其他设备的 Redis 操作采用"best-effort"语义:失败时仅记日志,不回滚密码、不返回错误。已签发的 accessToken 也最多在 2 小时内自然过期
+验收标准:
 
-## 安全考虑
-
-- 旧密码校验防止 accessToken 被盗后任意改密
-- 改密后立即踢掉其他会话,即便攻击者持有其他设备的 refreshToken 也立即失效
-- 当前会话保留,避免用户主动操作后被自己踢出导致体验问题
-- 错误消息粒度高(明确区分"旧密码错误"等),由于本接口需 JWT 已登录,不存在用户枚举风险
+- 功能: 改密成功后当前设备保留,其他设备 refreshToken 失效。
+- 一致性: 不出现部分 `UserAuth` 更新成功、部分失败。
+- 兼容性: 不改变现有 `Result` 结构与全局 HTTP 200 响应习惯。
