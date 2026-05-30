@@ -27,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
@@ -282,6 +283,24 @@ public class AuthController {
         } catch (Exception e) {
             log.error("绑定手机号失败", e);
             return Result.fail("绑定手机号失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 切换主账号
+     */
+    @Operation(summary = "切换主账号", description = "在已绑定的手机号/邮箱之间切换主账号", security = @SecurityRequirement(name = "JWT"))
+    @PostMapping("/bind/primary")
+    public Result<Void> switchPrimary(HttpServletRequest request, @RequestParam String authType) {
+        try {
+            String accessToken = extractToken(request);
+            Long userId = jwtUtil.getUserId(accessToken);
+            String normalizedAuthType = authType == null ? null : authType.trim().toUpperCase(Locale.ROOT);
+            log.info("切换主账号请求: userId={}, authType={}", userId, normalizedAuthType);
+            return authService.switchPrimary(userId, normalizedAuthType);
+        } catch (Exception e) {
+            log.error("切换主账号失败", e);
+            return Result.fail("切换主账号失败: " + e.getMessage());
         }
     }
 

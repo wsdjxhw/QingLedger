@@ -487,6 +487,49 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    public Result<Void> switchPrimary(Long userId, String authType) {
+        log.info("切换主账号请求: userId={}, authType={}", userId, authType);
+
+        // 防御式校验：仅允许 PHONE / EMAIL
+        if (!AUTH_TYPE_PHONE.equals(authType) && !AUTH_TYPE_EMAIL.equals(authType)) {
+            return Result.fail("不支持的登录方式，仅支持 PHONE 和 EMAIL");
+        }
+
+        List<UserAuth> userAuths = userAuthMapper.selectByUserId(userId);
+        if (userAuths == null || userAuths.isEmpty()) {
+            return Result.fail("该登录方式尚未绑定，无法设为主账号");
+        }
+
+        UserAuth targetAuth = null;
+        String oldPrimaryType = null;
+        for (UserAuth auth : userAuths) {
+            if (Boolean.TRUE.equals(auth.getIsPrimary())) {
+                oldPrimaryType = auth.getAuthType();
+            }
+            if (authType.equals(auth.getAuthType())) {
+                targetAuth = auth;
+            }
+        }
+
+        if (targetAuth == null) {
+            return Result.fail("该登录方式尚未绑定，无法设为主账号");
+        }
+
+        if (Boolean.TRUE.equals(targetAuth.getIsPrimary())) {
+            return Result.ok("已是主账号，无需切换", null);
+        }
+
+        int affected = userAuthMapper.setPrimaryByUserIdAndAuthType(userId, authType);
+        if (affected <= 0) {
+            return Result.fail("主账号切换失败");
+        }
+
+        log.info("主账号切换成功: userId={}, oldPrimary={}, newPrimary={}", userId, oldPrimaryType, authType);
+        return Result.ok();
+    }
+
+    @Override
+    @Transactional
     public Result<Void> changePassword(Long userId, String oldPassword, String newPassword) {
         log.info("修改密码请求: userId={}", userId);
 

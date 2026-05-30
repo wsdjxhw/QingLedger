@@ -85,6 +85,14 @@ public interface AuthService {
     Result<Void> unbind(Long userId, String authType, String password);
 
     /**
+     * 切换主账号登录方式
+     * @param userId 用户ID
+     * @param authType 目标认证类型（PHONE/EMAIL）
+     * @return Result
+     */
+    Result<Void> switchPrimary(Long userId, String authType);
+
+    /**
      * 修改密码
      * @param userId 用户ID
      * @param oldPassword 旧密码

@@ -2,7 +2,12 @@ package com.qingledger.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.qingledger.entity.UserAuth;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import org.apache.ibatis.annotations.Mapper;
+
+import java.util.List;
 
 /**
  * 用户认证方式数据访问层 - UserAuth 表的 Mapper 接口
@@ -47,4 +52,15 @@ import org.apache.ibatis.annotations.Mapper;
 public interface UserAuthMapper extends BaseMapper<UserAuth> {
     // 继承 BaseMapper 后，自动拥有所有基础 CRUD 方法
     // 如需自定义 SQL，可以在这里添加方法并配合 XML 文件实现
+
+    @Select("SELECT * FROM user_auth WHERE user_id = #{userId}")
+    List<UserAuth> selectByUserId(@Param("userId") Long userId);
+
+    @Update({
+            "UPDATE user_auth",
+            "SET is_primary = CASE WHEN auth_type = #{authType} THEN TRUE ELSE FALSE END",
+            "WHERE user_id = #{userId}",
+            "AND auth_type IN ('PHONE', 'EMAIL')"
+    })
+    int setPrimaryByUserIdAndAuthType(@Param("userId") Long userId, @Param("authType") String authType);
 }
