@@ -1,6 +1,7 @@
 package com.qingledger.service.auth.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.qingledger.entity.User;
 import com.qingledger.entity.UserAuth;
 import com.qingledger.common.Result;
@@ -12,21 +13,20 @@ import com.qingledger.service.auth.TokenService;
 import com.qingledger.service.auth.VerificationService;
 import com.qingledger.service.user.UserService;
 import com.qingledger.service.userauth.UserAuthService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 认证服务实现
  */
+@Slf4j
 @Service
 public class AuthServiceImpl implements AuthService {
-
-    private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
 
     private final UserService userService;
     private final VerificationService verificationService;
@@ -86,9 +86,19 @@ public class AuthServiceImpl implements AuthService {
             }
         }
 
+        // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+        String verificationType;
+        if (target.matches(PHONE_PATTERN)) {
+            verificationType = AUTH_TYPE_PHONE;
+        } else if (target.matches(EMAIL_PATTERN)) {
+            verificationType = AUTH_TYPE_EMAIL;
+        } else {
+            return Result.fail("不支持的验证码目标类型");
+        }
+
         // 发送验证码
         try {
-            verificationService.sendCode(type, target);
+            verificationService.sendCode(verificationType, target);
             return Result.ok();
         } catch (Exception e) {
             log.error("验证码发送失败", e);
@@ -98,7 +108,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public Result<String> register(String username, String password, String target, String code) {
+    public Result<Long> register(String username, String password, String target, String code) {
         log.info("用户注册: username={}, target={}", username, target);
 
         // 校验目标格式
@@ -119,7 +129,17 @@ public class AuthServiceImpl implements AuthService {
 
         // 校验验证码
         try {
-            if (!verificationService.verifyCode("REGISTER", target, code)) {
+            // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+            String verificationType;
+            if (target.matches(PHONE_PATTERN)) {
+                verificationType = AUTH_TYPE_PHONE;
+            } else if (target.matches(EMAIL_PATTERN)) {
+                verificationType = AUTH_TYPE_EMAIL;
+            } else {
+                return Result.fail("不支持的验证码目标类型");
+            }
+
+            if (!verificationService.verifyCode(verificationType, target, code)) {
                 return Result.fail("验证码错误或已过期");
             }
         } catch (Exception e) {
@@ -167,15 +187,12 @@ public class AuthServiceImpl implements AuthService {
 
         userAuthMapper.insert(userAuth);
 
-        // 生成令牌
-        TokenService.TokenPairResult tokens = tokenService.generateTokens(user.getId());
-
         log.info("用户注册成功: userId={}", user.getId());
-        return Result.ok(tokens.accessToken());
+        return Result.ok(user.getId());
     }
 
     @Override
-    public Result<String> login(String account, String password) {
+    public Result<Long> login(String account, String password) {
         log.info("用户登录: account={}", account);
 
         if (account == null || account.trim().isEmpty()) {
@@ -187,14 +204,19 @@ public class AuthServiceImpl implements AuthService {
 
         // 查找用户认证信息
         UserAuth userAuth = findUserAuthByAccount(account);
+        log.debug("查询结果: userAuth={}", userAuth);
         if (userAuth == null) {
+            log.warn("用户认证信息未找到: account={}", account);
             return Result.fail("账号或密码错误");
         }
 
         // 验证密码
+        log.debug("开始验证密码: userId={}", userAuth.getUserId());
         if (!passwordEncoder.matches(password, userAuth.getPassword())) {
+            log.warn("密码验证失败: account={}", account);
             return Result.fail("账号或密码错误");
         }
+        log.debug("密码验证成功");
 
         // 检查用户状态
         User user = userMapper.selectById(userAuth.getUserId());
@@ -205,15 +227,12 @@ public class AuthServiceImpl implements AuthService {
             return Result.fail("用户已被禁用");
         }
 
-        // 生成令牌
-        TokenService.TokenPairResult tokens = tokenService.generateTokens(userAuth.getUserId());
-
         log.info("用户登录成功: userId={}", userAuth.getUserId());
-        return Result.ok(tokens.accessToken());
+        return Result.ok(userAuth.getUserId());
     }
 
     @Override
-    public Result<String> loginWithCode(String target, String code) {
+    public Result<Long> loginWithCode(String target, String code) {
         log.info("验证码登录: target={}", target);
 
         // 校验目标格式
@@ -221,7 +240,17 @@ public class AuthServiceImpl implements AuthService {
 
         // 校验验证码
         try {
-            if (!verificationService.verifyCode("LOGIN", target, code)) {
+            // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+            String verificationType;
+            if (target.matches(PHONE_PATTERN)) {
+                verificationType = AUTH_TYPE_PHONE;
+            } else if (target.matches(EMAIL_PATTERN)) {
+                verificationType = AUTH_TYPE_EMAIL;
+            } else {
+                return Result.fail("不支持的验证码目标类型");
+            }
+
+            if (!verificationService.verifyCode(verificationType, target, code)) {
                 return Result.fail("验证码错误或已过期");
             }
         } catch (Exception e) {
@@ -244,11 +273,8 @@ public class AuthServiceImpl implements AuthService {
             return Result.fail("用户已被禁用");
         }
 
-        // 生成令牌
-        TokenService.TokenPairResult tokens = tokenService.generateTokens(userAuth.getUserId());
-
         log.info("验证码登录成功: userId={}", userAuth.getUserId());
-        return Result.ok(tokens.accessToken());
+        return Result.ok(userAuth.getUserId());
     }
 
     @Override
@@ -266,7 +292,17 @@ public class AuthServiceImpl implements AuthService {
 
         // 校验验证码
         try {
-            if (!verificationService.verifyCode("RESET_PASSWORD", target, code)) {
+            // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+            String verificationType;
+            if (target.matches(PHONE_PATTERN)) {
+                verificationType = AUTH_TYPE_PHONE;
+            } else if (target.matches(EMAIL_PATTERN)) {
+                verificationType = AUTH_TYPE_EMAIL;
+            } else {
+                return Result.fail("不支持的验证码目标类型");
+            }
+
+            if (!verificationService.verifyCode(verificationType, target, code)) {
                 return Result.fail("验证码错误或已过期");
             }
         } catch (Exception e) {
@@ -299,6 +335,233 @@ public class AuthServiceImpl implements AuthService {
             log.error("刷新令牌失败", e);
             return Result.fail("刷新令牌失败: " + e.getMessage());
         }
+    }
+
+    @Override
+    @Transactional
+    public Result<Void> bindEmail(Long userId, String email, String code) {
+        log.info("绑定邮箱请求: userId={}, Email={}", userId, email);
+        //校验验证码
+        try{
+            if(!verificationService.verifyCode(AUTH_TYPE_EMAIL,email,code)){
+                return Result.fail("验证码错误或已失效");
+            }
+        }catch(Exception e){
+            log.error("验证码校验失败",e);
+            return Result.fail("验证码校验失败: " + e.getMessage());
+        }
+        UserAuth userAuth = findUserAuthByPhoneOrEmail(email);
+        if (userAuth != null) {
+            return Result.fail("该邮箱已被绑定");
+        }
+
+        List<UserAuth> userAuths = userAuthMapper.selectList(new QueryWrapper<UserAuth>().eq("user_id", userId));
+        String password = null;
+        for(UserAuth UA : userAuths){
+            if(UA.getAuthType().equals(AUTH_TYPE_EMAIL)){
+                return Result.fail("当前账号已经绑定邮箱,请勿重复绑定");
+            }
+            if(UA.getPassword() != null){
+                password = UA.getPassword();
+            }
+        }
+
+        UserAuth newUserAuth = new UserAuth();
+        newUserAuth.setUserId(userId);
+        newUserAuth.setAuthType(AUTH_TYPE_EMAIL);
+        newUserAuth.setIdentifier(email);
+        newUserAuth.setPassword(password);
+        newUserAuth.setVerified(true);
+        newUserAuth.setIsPrimary(false);
+        newUserAuth.setBindAt(LocalDateTime.now());
+
+        userAuthMapper.insert(newUserAuth);
+
+        log.info("邮箱绑定成功: userId={}, email={}", userId, email);
+        return Result.ok();
+    }
+
+    @Override
+    @Transactional
+    public Result<Void> bindPhone(Long userId, String phone, String code) {
+        log.info("绑定手机号请求: userId={}, phone={}", userId, phone);
+
+        // 参考邮箱绑定的实现步骤:
+        // 1. 校验验证码
+        try{
+            if(!verificationService.verifyCode(AUTH_TYPE_PHONE,phone,code)){
+                return Result.fail("验证码错误或已失效");
+            }
+        }catch(Exception e){
+            log.error("验证码校验失败",e);
+            return Result.fail("验证码校验失败: " + e.getMessage());
+        }
+        // 2. 检查手机号是否已被绑定
+        UserAuth userAuth = findUserAuthByPhoneOrEmail(phone);
+        if(userAuth != null){
+            return Result.fail("该手机号已被绑定");
+        }
+        // 3. 检查当前账号是否已绑定手机号
+        List<UserAuth> userAuths = userAuthMapper.selectList(new QueryWrapper<UserAuth>().eq("user_id", userId));
+        String password = null;
+        for(UserAuth UA : userAuths){
+            if(UA.getAuthType().equals(AUTH_TYPE_PHONE)){
+                return Result.fail("当前账号已经绑定手机号,请勿重复绑定");
+            }
+            // 4. 获取现有密码（密码继承逻辑）
+            if(UA.getPassword() != null){
+                password = UA.getPassword();
+            }
+        }
+        // 5. 创建新的 UserAuth 记录
+        UserAuth newUserAuth = new UserAuth();
+        newUserAuth.setUserId(userId);
+        newUserAuth.setAuthType(AUTH_TYPE_PHONE);
+        newUserAuth.setIdentifier(phone);
+        newUserAuth.setPassword(password);
+        newUserAuth.setVerified(true);
+        newUserAuth.setIsPrimary(false);
+        newUserAuth.setBindAt(LocalDateTime.now());
+
+        userAuthMapper.insert(newUserAuth);
+        // 6. 记录日志并返回成功
+        log.info("手机号绑定成功: userId={}, phone={}", userId, phone);
+        return Result.ok();
+    }
+
+    @Override
+    @Transactional
+    public Result<Void> unbind(Long userId, String authType, String password) {
+        log.info("解绑登录方式请求: userId={}, authType={}", userId, authType);
+
+        // 1. 参数校验：authType 必须是 PHONE 或 EMAIL
+        if (!AUTH_TYPE_PHONE.equals(authType) && !AUTH_TYPE_EMAIL.equals(authType)) {
+            return Result.fail("认证类型必须是 PHONE 或 EMAIL");
+        }
+
+        // 2. 查询该用户所有 UserAuth 记录
+        List<UserAuth> userAuths = userAuthMapper.selectList(
+                new QueryWrapper<UserAuth>().eq("user_id", userId));
+
+        // 3. 检查最后一条保护：用户绑定数 <= 1 时拒绝解绑
+        if (userAuths.size() <= 1) {
+            return Result.fail("至少保留一种登录方式,请先绑定新的登录方式");
+        }
+
+        // 4. 查找待解绑的目标记录
+        UserAuth targetAuth = null;
+        for (UserAuth ua : userAuths) {
+            if (authType.equals(ua.getAuthType())) {
+                targetAuth = ua;
+                break;
+            }
+        }
+        if (targetAuth == null) {
+            return Result.fail("未找到该认证方式");
+        }
+
+        // 5. 密码校验
+        if (!passwordEncoder.matches(password, targetAuth.getPassword())) {
+            log.warn("解绑密码验证失败: userId={}, authType={}", userId, authType);
+            return Result.fail("密码错误");
+        }
+
+        // 6. 处理主账号：若待删除记录是主账号,则将剩余的第一条设为主账号
+        if (Boolean.TRUE.equals(targetAuth.getIsPrimary())) {
+            for (UserAuth ua : userAuths) {
+                if (!ua.getId().equals(targetAuth.getId())) {
+                    ua.setIsPrimary(true);
+                    userAuthMapper.updateById(ua);
+                    log.info("主账号已转移: userId={}, newPrimaryAuthType={}", userId, ua.getAuthType());
+                    break;
+                }
+            }
+        }
+
+        // 7. 执行删除
+        userAuthMapper.deleteById(targetAuth.getId());
+
+        log.info("解绑成功: userId={}, authType={}", userId, authType);
+        return Result.ok();
+    }
+
+    @Override
+    @Transactional
+    public Result<Void> switchPrimary(Long userId, String authType) {
+        log.info("切换主账号请求: userId={}, authType={}", userId, authType);
+
+        // 防御式校验：仅允许 PHONE / EMAIL
+        if (!AUTH_TYPE_PHONE.equals(authType) && !AUTH_TYPE_EMAIL.equals(authType)) {
+            return Result.fail("不支持的登录方式，仅支持 PHONE 和 EMAIL");
+        }
+
+        List<UserAuth> userAuths = userAuthMapper.selectByUserId(userId);
+        if (userAuths == null || userAuths.isEmpty()) {
+            return Result.fail("该登录方式尚未绑定，无法设为主账号");
+        }
+
+        UserAuth targetAuth = null;
+        String oldPrimaryType = null;
+        for (UserAuth auth : userAuths) {
+            if (Boolean.TRUE.equals(auth.getIsPrimary())) {
+                oldPrimaryType = auth.getAuthType();
+            }
+            if (authType.equals(auth.getAuthType())) {
+                targetAuth = auth;
+            }
+        }
+
+        if (targetAuth == null) {
+            return Result.fail("该登录方式尚未绑定，无法设为主账号");
+        }
+
+        if (Boolean.TRUE.equals(targetAuth.getIsPrimary())) {
+            return Result.ok("已是主账号，无需切换", null);
+        }
+
+        int affected = userAuthMapper.setPrimaryByUserIdAndAuthType(userId, authType);
+        if (affected <= 0) {
+            return Result.fail("主账号切换失败");
+        }
+
+        log.info("主账号切换成功: userId={}, oldPrimary={}, newPrimary={}", userId, oldPrimaryType, authType);
+        return Result.ok();
+    }
+
+    @Override
+    @Transactional
+    public Result<Void> changePassword(Long userId, String oldPassword, String newPassword) {
+        log.info("修改密码请求: userId={}", userId);
+
+        // 1. 校验新旧密码不相同(在 DB 查询之前拦截)
+        if (oldPassword != null && oldPassword.equals(newPassword)) {
+            return Result.fail("新密码不能与旧密码相同");
+        }
+
+        // 2. 查询该用户所有 UserAuth 记录
+        List<UserAuth> userAuths = userAuthMapper.selectList(
+                new QueryWrapper<UserAuth>().eq("user_id", userId));
+
+        // 3. 用户不存在(无任何 UserAuth)
+        if (userAuths.isEmpty()) {
+            return Result.fail("用户不存在");
+        }
+
+        // 4. 用第一条记录的 password 做 BCrypt 校验旧密码
+        //    (该用户所有 UserAuth.password 已通过本接口同步,任意一条均可,固定取第一条以消除歧义)
+        UserAuth firstAuth = userAuths.get(0);
+        if (!passwordEncoder.matches(oldPassword, firstAuth.getPassword())) {
+            log.warn("修改密码-旧密码错误: userId={}", userId);
+            return Result.fail("旧密码错误");
+        }
+
+        // 5. 单 SQL 条件更新该用户全部 UserAuth.password,避免逐条 update 造成部分成功
+        String encoded = passwordEncoder.encode(newPassword);
+        userAuthMapper.update(null,
+                new UpdateWrapper<UserAuth>().set("password", encoded).eq("user_id", userId));
+
+        log.info("修改密码成功: userId={}", userId);
+        return Result.ok();
     }
 
     /**
@@ -345,15 +608,13 @@ public class AuthServiceImpl implements AuthService {
      */
     private UserAuth findUserAuthByAccount(String account) {
         QueryWrapper<UserAuth> wrapper = new QueryWrapper<>();
-        wrapper.and(w -> w.eq("auth_type", AUTH_TYPE_USERNAME)
-                          .eq("identifier", account)
-                          .or()
-                          .eq("auth_type", AUTH_TYPE_PHONE)
-                          .eq("identifier", account)
-                          .or()
-                          .eq("auth_type", AUTH_TYPE_EMAIL)
-                          .eq("identifier", account));
-        return userAuthMapper.selectOne(wrapper);
+        wrapper.and(w -> w
+                .and(w1 -> w1.eq("auth_type", AUTH_TYPE_USERNAME).eq("identifier", account))
+                .or(w2 -> w2.eq("auth_type", AUTH_TYPE_PHONE).eq("identifier", account))
+                .or(w3 -> w3.eq("auth_type", AUTH_TYPE_EMAIL).eq("identifier", account))
+        );
+        List<UserAuth> results = userAuthMapper.selectList(wrapper);
+        return results.isEmpty() ? null : results.get(0);
     }
 
     /**

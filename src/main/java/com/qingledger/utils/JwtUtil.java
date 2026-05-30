@@ -22,18 +22,27 @@ public class JwtUtil {
         this.jwtConfig = jwtConfig;
     }
 
-    public String generateAccessToken(Long userId) {
-        return generateToken(userId, "access", jwtConfig.getAccessTokenExpire());
+    public String generateAccessToken(Long userId, String refreshTokenId) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("userId", userId);
+        claims.put("type", "access");
+        claims.put("refreshTokenId", refreshTokenId);
+
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + jwtConfig.getAccessTokenExpire() * 1000);
+
+        return Jwts.builder()
+                .claims(claims)
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(getSigningKey())
+                .compact();
     }
 
     public RefreshTokenResult generateRefreshToken(Long userId) {
         String tokenId = UUID.randomUUID().toString().replace("-", "");
         String token = generateToken(userId, "refresh", jwtConfig.getRefreshTokenExpire(), tokenId);
         return new RefreshTokenResult(token, tokenId);
-    }
-
-    private String generateToken(Long userId, String type, Long expireSeconds) {
-        return generateToken(userId, type, expireSeconds, null);
     }
 
     private String generateToken(Long userId, String type, Long expireSeconds, String tokenId) {
@@ -73,6 +82,10 @@ public class JwtUtil {
 
     public String getTokenId(String token) {
         return parseToken(token).get("tokenId", String.class);
+    }
+
+    public String getRefreshTokenId(String accessToken) {
+        return parseToken(accessToken).get("refreshTokenId", String.class);
     }
 
     public boolean isAccessToken(String token) {
