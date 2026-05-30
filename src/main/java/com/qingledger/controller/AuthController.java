@@ -9,13 +9,12 @@ import com.qingledger.exception.AuthException;
 import com.qingledger.mapper.UserMapper;
 import com.qingledger.service.auth.AuthService;
 import com.qingledger.service.auth.TokenService;
-import com.qingledger.service.user.UserService;
 import com.qingledger.service.userauth.UserAuthService;
 import com.qingledger.utils.JwtUtil;
 import com.qingledger.vo.BindingInfo;
 import com.qingledger.vo.LoginResponse;
 import com.qingledger.vo.UserInfo;
-import com.qingledger.vo.UserInfoResponse;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -46,20 +45,17 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserAuthService userAuthService;
-    private final UserService userService;
     private final JwtUtil jwtUtil;
     private final TokenService tokenService;
     private final UserMapper userMapper;
 
     public AuthController(AuthService authService,
                          UserAuthService userAuthService,
-                         UserService userService,
                          JwtUtil jwtUtil,
                          TokenService tokenService,
                          UserMapper userMapper) {
         this.authService = authService;
         this.userAuthService = userAuthService;
-        this.userService = userService;
         this.jwtUtil = jwtUtil;
         this.tokenService = tokenService;
         this.userMapper = userMapper;
@@ -189,40 +185,6 @@ public class AuthController {
             return Result.ok(response);
         } else {
             return Result.fail(result.getMessage());
-        }
-    }
-
-    /**
-     * 获取当前用户信息
-     */
-    @Operation(summary = "获取当前用户信息", description = "获取当前登录用户的详细信息", security = @SecurityRequirement(name = "JWT"))
-    @GetMapping("/user")
-    public Result<UserInfoResponse> getUserInfo(HttpServletRequest request) {
-        try {
-            String accessToken = extractToken(request);
-            Long userId = jwtUtil.getUserId(accessToken);
-
-            log.info("获取用户信息: userId={}", userId);
-
-            User user = userMapper.selectById(userId);
-            if (user == null) {
-                return Result.fail("用户不存在");
-            }
-
-            List<BindingInfo> bindings = userAuthService.getUserAuths(userId).stream()
-                    .map(this::buildBindingInfo)
-                    .collect(Collectors.toList());
-
-            UserInfoResponse response = new UserInfoResponse();
-            response.setId(userId);
-            response.setNickname(user.getNickname());
-            response.setAvatar(user.getAvatar());
-            response.setBindings(bindings);
-
-            return Result.ok(response);
-        } catch (Exception e) {
-            log.error("获取用户信息失败", e);
-            return Result.fail("获取用户信息失败: " + e.getMessage());
         }
     }
 

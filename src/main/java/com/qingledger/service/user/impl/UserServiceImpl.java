@@ -1,9 +1,11 @@
 package com.qingledger.service.user.impl;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.qingledger.entity.User;
 import com.qingledger.mapper.UserMapper;
 import com.qingledger.service.user.UserService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -26,18 +28,39 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    public void updateNickname(Long userId, String nickname) {
-        User user = new User();
-        user.setId(userId);
-        user.setNickname(nickname);
-        userMapper.updateById(user);
-    }
+    @Transactional
+    public void updateProfile(Long userId, String nickname, String avatar) {
+        // 均无需更新，直接返回
+        if (nickname == null && avatar == null) {
+            return;
+        }
 
-    @Override
-    public void updateAvatar(Long userId, String avatar) {
         User user = new User();
         user.setId(userId);
-        user.setAvatar(avatar);
-        userMapper.updateById(user);
+
+        boolean needUpdate = false;
+
+        if (nickname != null) {
+            user.setNickname(nickname);
+            needUpdate = true;
+        }
+
+        if (avatar != null && !avatar.isEmpty()) {
+            user.setAvatar(avatar);
+            needUpdate = true;
+        }
+
+        // 普通字段更新
+        if (needUpdate) {
+            userMapper.updateById(user);
+        }
+
+        // avatar 为空字符串：单独处理，显式写 null
+        if (avatar != null && avatar.isEmpty()) {
+            userMapper.update(null,
+                    new UpdateWrapper<User>()
+                            .set("avatar", null)
+                            .eq("id", userId));
+        }
     }
 }
