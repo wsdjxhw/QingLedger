@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -60,6 +61,15 @@ public class GlobalExceptionHandler {
         }
         log.error("参数校验异常: {}", message);
         return Result.fail(400, message);
+    }
+
+    /**
+     * 处理缺少必填请求参数异常
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public Result<Void> handleMissingParam(MissingServletRequestParameterException e) {
+        log.error("缺少必填参数: {}", e.getParameterName());
+        return Result.fail(400, "缺少必填参数: " + e.getParameterName());
     }
 
     /**

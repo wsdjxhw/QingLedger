@@ -59,7 +59,11 @@ public class CategoryServiceImpl implements CategoryService {
         category.setIsSystem(false);
         category.setUserId(userId);
 
-        categoryMapper.insert(category);
+        try {
+            categoryMapper.insert(category);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(400, MSG_DUPLICATED);
+        }
         return categoryMapper.selectById(category.getId());
     }
 
@@ -102,7 +106,12 @@ public class CategoryServiceImpl implements CategoryService {
             wrapper.set("color", normalizeNullable(req.getColor()));
         }
 
-        int affected = categoryMapper.update(null, wrapper);
+        int affected;
+        try {
+            affected = categoryMapper.update(null, wrapper);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(400, MSG_DUPLICATED);
+        }
         if (affected <= 0) {
             throw new BusinessException(400, MSG_NO_PERMISSION);
         }
