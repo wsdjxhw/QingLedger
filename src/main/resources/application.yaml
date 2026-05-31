@@ -50,6 +50,7 @@ spring:
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml
   type-aliases-package: com.qingledger.entity
+  type-enums-package: com.qingledger.enums
   configuration:
     map-underscore-to-camel-case: true
     log-impl: ${MYBATIS_LOG:org.apache.ibatis.logging.slf4j.Slf4jImpl}
