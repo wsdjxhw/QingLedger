@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface InvitationCodeMapper extends BaseMapper<InvitationCode> {
 
+    //原子性做完校验和消费
     @Update("UPDATE invitation_code SET use_count = use_count + 1 " +
             "WHERE code = #{code} AND status = 'active' " +
             "AND (expires_at IS NULL OR expires_at > NOW()) " +
