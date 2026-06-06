@@ -290,13 +290,56 @@ public class LedgerServiceImpl implements LedgerService {
     }
 
     @Override
+    @Transactional
     public void updateMemberRole(Long userId, Long ledgerId, Long targetUserId, UpdateMemberRoleRequest req) {
-        throw new UnsupportedOperationException("待实现");
+        if(userId.equals(targetUserId)) {
+            throw new BusinessException(400, "不能修改自己");
+        }
+        Ledger ledger = getLedgerOrThrow(ledgerId);
+        if (isArchived(ledger)) {
+            throw new BusinessException(400, MSG_LEDGER_ARCHIVED);
+        }
+        LedgerMember currentMember = getMemberOrThrow(ledgerId, userId);
+        //判断是否权限足够
+        LedgerMember targetMember = getMemberOrThrow(ledgerId, targetUserId);
+        requireRoleAtLeast(currentMember,targetMember.getRole());
+        if(currentMember.getRole() == targetMember.getRole()) {
+            throw new BusinessException(400,MSG_PERMISSION_DENIED);
+        }
+        if(targetMember.getRole() == MemberRole.OWNER || req.getRole() == MemberRole.OWNER) {
+            throw new BusinessException(400, MSG_CANNOT_OPERATE_OWNER);
+        }
+
+        targetMember.setRole(req.getRole());
+        ledgerMemberMapper.updateById(targetMember);
     }
 
     @Override
+    @Transactional
     public void removeMember(Long userId, Long ledgerId, Long targetUserId) {
-        throw new UnsupportedOperationException("待实现");
+        if(userId.equals(targetUserId)) {
+            throw new BusinessException(400, MSG_CANNOT_REMOVE_SELF);
+        }
+        Ledger ledger = getLedgerOrThrow(ledgerId);
+        if (isArchived(ledger)) {
+            throw new BusinessException(400, MSG_LEDGER_ARCHIVED);
+        }
+        LedgerMember member = getMemberOrThrow(ledgerId, userId);
+
+        LedgerMember targetMember = ledgerMemberMapper.selectOne(
+                Wrappers.<LedgerMember>query()
+                        .eq("ledger_id", ledgerId)
+                        .eq("user_id", targetUserId)
+        );
+        if (targetMember == null) {
+            throw new BusinessException(400, MSG_TARGET_NOT_MEMBER);
+        }
+        if(member.getRole() == targetMember.getRole()) {
+            throw new BusinessException(400,MSG_PERMISSION_DENIED);
+        }
+        requireRoleAtLeast(member, targetMember.getRole());
+
+        ledgerMemberMapper.deleteById(targetMember.getId());
     }
 
     // ==================== 邀请码 ====================
