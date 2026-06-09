@@ -7,12 +7,14 @@ import com.qingledger.dto.request.*;
 import com.qingledger.entity.InvitationCode;
 import com.qingledger.entity.Ledger;
 import com.qingledger.entity.LedgerMember;
+import com.qingledger.entity.Transaction;
 import com.qingledger.entity.User;
 import com.qingledger.entity.UserAuth;
 import com.qingledger.enums.LedgerType;
 import com.qingledger.enums.MemberRole;
 import com.qingledger.mapper.InvitationCodeMapper;
 import com.qingledger.mapper.LedgerMapper;
+import com.qingledger.mapper.TransactionMapper;
 import com.qingledger.mapper.LedgerMemberMapper;
 import com.qingledger.mapper.UserAuthMapper;
 import com.qingledger.mapper.UserMapper;
@@ -58,17 +60,20 @@ public class LedgerServiceImpl implements LedgerService {
     private final LedgerMapper ledgerMapper;
     private final LedgerMemberMapper ledgerMemberMapper;
     private final InvitationCodeMapper invitationCodeMapper;
+    private final TransactionMapper transactionMapper;
     private final UserMapper userMapper;
     private final UserAuthMapper userAuthMapper;
 
     public LedgerServiceImpl(LedgerMapper ledgerMapper,
                              LedgerMemberMapper ledgerMemberMapper,
                              InvitationCodeMapper invitationCodeMapper,
+                             TransactionMapper transactionMapper,
                              UserMapper userMapper,
                              UserAuthMapper userAuthMapper) {
         this.ledgerMapper = ledgerMapper;
         this.ledgerMemberMapper = ledgerMemberMapper;
         this.invitationCodeMapper = invitationCodeMapper;
+        this.transactionMapper = transactionMapper;
         this.userMapper = userMapper;
         this.userAuthMapper = userAuthMapper;
     }
@@ -162,6 +167,10 @@ public class LedgerServiceImpl implements LedgerService {
         LedgerMember member = getMemberOrThrow(ledgerId, userId);
         requireRoleExactly(member, MemberRole.OWNER);
 
+        // 删除账本下所有交易（无外键级联，需手动清理）
+        transactionMapper.delete(
+                Wrappers.<Transaction>query().eq("ledger_id", ledgerId)
+        );
         ledgerMapper.deleteById(ledgerId);
     }
 

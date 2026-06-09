@@ -7,7 +7,7 @@ import com.qingledger.vo.TransactionResponse;
 
 public interface TransactionService {
 
-    Transaction createTransaction(Long userId, CreateTransactionRequest req);
+    Long createTransaction(Long userId, CreateTransactionRequest req);
 
     TransactionResponse getTransaction(Long userId, Long id);
 

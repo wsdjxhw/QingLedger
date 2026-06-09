@@ -8,10 +8,12 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.qingledger.common.BusinessException;
 import com.qingledger.dto.request.*;
 import com.qingledger.entity.Category;
+import com.qingledger.entity.Ledger;
 import com.qingledger.entity.LedgerMember;
 import com.qingledger.entity.Transaction;
 import com.qingledger.enums.TransactionType;
 import com.qingledger.mapper.CategoryMapper;
+import com.qingledger.mapper.LedgerMapper;
 import com.qingledger.mapper.LedgerMemberMapper;
 import com.qingledger.mapper.TransactionMapper;
 import com.qingledger.service.transaction.TransactionService;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -35,32 +38,61 @@ public class TransactionServiceImpl implements TransactionService {
     private static final String MSG_CATEGORY_NOT_VISIBLE = "分类不存在或不可用";
     private static final String MSG_INVALID_DATE = "日期格式错误";
     private static final String MSG_INVALID_AMOUNT = "金额必须大于0";
+    private static final String MSG_LEDGER_ARCHIVED = "账本已归档";
 
     private final TransactionMapper transactionMapper;
     private final CategoryMapper categoryMapper;
     private final LedgerMemberMapper ledgerMemberMapper;
+    private final LedgerMapper ledgerMapper;
 
     public TransactionServiceImpl(TransactionMapper transactionMapper,
                                   CategoryMapper categoryMapper,
-                                  LedgerMemberMapper ledgerMemberMapper) {
+                                  LedgerMemberMapper ledgerMemberMapper,
+                                  LedgerMapper ledgerMapper) {
         this.transactionMapper = transactionMapper;
         this.categoryMapper = categoryMapper;
         this.ledgerMemberMapper = ledgerMemberMapper;
+        this.ledgerMapper = ledgerMapper;
     }
 
-    // ==================== 创建（TODO: ） ====================
+    // ==================== 创建 ====================
 
     @Override
     @Transactional
-    public Transaction createTransaction(Long userId, CreateTransactionRequest req) {
-        // TODO:
+    public Long createTransaction(Long userId, CreateTransactionRequest req) {
         // 1. 校验用户是账本成员
+        if (!isMember(req.getLedgerId(), userId)) {
+            throw new BusinessException(404, MSG_NOT_FOUND);
+        }
+        // 1.1 校验账本未归档
+        checkLedgerNotArchived(req.getLedgerId());
         // 2. 如果传了 categoryId，校验分类对用户可见且 type 匹配
+        if (req.getCategoryId() != null) {
+            validateCategoryForUpdate(req.getType(), req.getCategoryId(), userId);
+        }
         // 3. tags normalize：trim、转小写、去重、过滤空值
+        String tags = normalizeTags(req.getTags());
         // 4. 解析 occurDate
+        LocalDate occurDate;
+        try {
+            occurDate = LocalDate.parse(req.getOccurDate(), DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (DateTimeParseException e) {
+            throw new BusinessException(400, MSG_INVALID_DATE);
+        }
         // 5. 构建 Transaction 对象并 insert
+        Transaction txn = new Transaction();
+        txn.setLedgerId(req.getLedgerId());
+        txn.setUserId(userId);
+        txn.setType(req.getType());
+        txn.setCategoryId(req.getCategoryId());
+        txn.setAmount(req.getAmount());
+        txn.setTags(tags);
+        txn.setNote(req.getNote());
+        txn.setOccurDate(occurDate);
+
+        transactionMapper.insert(txn);
         // 6. 返回重新查询的完整记录
-        throw new UnsupportedOperationException("待实现");
+        return txn.getId();
     }
 
     // ==================== 查询单条 ====================
@@ -71,6 +103,7 @@ public class TransactionServiceImpl implements TransactionService {
         if (txn == null || !isMember(txn.getLedgerId(), userId)) {
             throw new BusinessException(404, MSG_NOT_FOUND);
         }
+        checkLedgerNotArchived(txn.getLedgerId());
         return toResponse(txn);
     }
 
@@ -81,6 +114,7 @@ public class TransactionServiceImpl implements TransactionService {
         if (!isMember(ledgerId, userId)) {
             throw new BusinessException(404, MSG_NOT_FOUND);
         }
+        checkLedgerNotArchived(ledgerId);
 
         QueryWrapper<Transaction> wrapper = buildListQueryWrapper(ledgerId, query);
 
@@ -119,6 +153,7 @@ public class TransactionServiceImpl implements TransactionService {
         if (txn == null || !Objects.equals(txn.getUserId(), userId) || !isMember(txn.getLedgerId(), userId)) {
             throw new BusinessException(404, MSG_NOT_FOUND);
         }
+        checkLedgerNotArchived(txn.getLedgerId());
 
         TransactionType finalType = txn.getType();
         Integer finalCategoryId = txn.getCategoryId();
@@ -184,6 +219,7 @@ public class TransactionServiceImpl implements TransactionService {
         if (txn == null || !Objects.equals(txn.getUserId(), userId) || !isMember(txn.getLedgerId(), userId)) {
             throw new BusinessException(404, MSG_NOT_FOUND);
         }
+        checkLedgerNotArchived(txn.getLedgerId());
 
         int rows = transactionMapper.delete(
                 new UpdateWrapper<Transaction>()
@@ -347,8 +383,19 @@ public class TransactionServiceImpl implements TransactionService {
 
     private List<Transaction> filterAccessibleTxns(List<Transaction> txns, Long userId) {
         return txns.stream()
-                .filter(txn -> isMember(txn.getLedgerId(), userId))
+                .filter(txn -> isMember(txn.getLedgerId(), userId) && !isArchived(txn.getLedgerId()))
                 .collect(Collectors.toList());
+    }
+
+    private boolean isArchived(Long ledgerId) {
+        Ledger ledger = ledgerMapper.selectById(ledgerId);
+        return ledger == null || (ledger.getStatus() != null && ledger.getStatus() == 0);
+    }
+
+    private void checkLedgerNotArchived(Long ledgerId) {
+        if (isArchived(ledgerId)) {
+            throw new BusinessException(400, MSG_LEDGER_ARCHIVED);
+        }
     }
 
     private boolean isMember(Long ledgerId, Long userId) {

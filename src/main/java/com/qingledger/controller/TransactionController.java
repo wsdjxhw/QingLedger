@@ -27,8 +27,9 @@ public class TransactionController {
     @Operation(summary = "创建交易", description = "在账本中新增一条交易记录", security = @SecurityRequirement(name = "JWT"))
     @PostMapping
     public Result<TransactionResponse> createTransaction(@Valid @RequestBody CreateTransactionRequest req) {
-        // TODO
-        throw new UnsupportedOperationException("待实现");
+        Long userId = getCurrentUserId();
+        Long id = transactionService.createTransaction(userId, req);
+        return Result.ok(transactionService.getTransaction(userId,id));
     }
 
     @Operation(summary = "获取交易详情", description = "查询单条交易记录", security = @SecurityRequirement(name = "JWT"))
