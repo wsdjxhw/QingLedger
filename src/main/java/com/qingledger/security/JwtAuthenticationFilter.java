@@ -1,7 +1,6 @@
 package com.qingledger.security;
 
 import com.qingledger.entity.User;
-import com.qingledger.exception.AuthException;
 import com.qingledger.mapper.UserMapper;
 import com.qingledger.utils.UserContext;
 import com.qingledger.utils.JwtUtil;
@@ -110,67 +109,51 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        // 步骤1: 从请求头提取 Token
+        String bearerToken = request.getHeader("Authorization");
+        if (bearerToken == null || !bearerToken.startsWith("Bearer ")) {
+            // 没有 Token，继续过滤器链（AnonymousAuthenticationFilter 会处理）
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        String accessToken = bearerToken.substring(7);
+        log.debug("开始JWT认证，Token长度: {}", accessToken.length());
+
+        // 步骤2: 解析和验证 Token
         try {
-            // 步骤1: 从请求头提取 Token
-            String bearerToken = request.getHeader("Authorization");
-            if (bearerToken == null || !bearerToken.startsWith("Bearer ")) {
-                // 没有 Token，继续过滤器链（Spring Security 会处理未认证的请求）
-                filterChain.doFilter(request, response);
+            // 验证 Token 类型（必须是 Access Token，不能用 RefreshToken）
+            if (!jwtUtil.isAccessToken(accessToken)) {
+                write401Response(response, "Token类型错误，请使用 AccessToken");
                 return;
             }
 
-            String accessToken = bearerToken.substring(7);
-            log.debug("开始JWT认证，Token长度: {}", accessToken.length());
-
-            // 步骤2: 验证 Token 类型（必须是 Access Token，不能用 RefreshToken）
-            try {
-                if (!jwtUtil.isAccessToken(accessToken)) {
-                    log.debug("Token 类型错误，不是 Access Token");
-                    filterChain.doFilter(request, response);
-                    return;
-                }
-            } catch (Exception e) {
-                log.error("Token类型验证失败: {}", e.getMessage(), e);
-                filterChain.doFilter(request, response);
-                return;
-            }
-
-            // 步骤3: 提取用户ID
-            Long userId = null;
-            try {
-                userId = jwtUtil.getUserId(accessToken);
-            } catch (Exception e) {
-                log.error("提取用户ID失败，可能是JWT secret不匹配或token格式错误: {}", e.getMessage(), e);
-                filterChain.doFilter(request, response);
-                return;
-            }
+            // 提取用户ID
+            Long userId = jwtUtil.getUserId(accessToken);
 
             if (userId == null) {
-                log.warn("Token 中没有用户ID信息");
-                filterChain.doFilter(request, response);
+                write401Response(response, "Token 中没有用户ID信息");
                 return;
             }
 
-            // 步骤4: 查询用户信息
+            // 查询用户信息
             User user = userMapper.selectById(userId);
             if (user == null) {
-                log.warn("用户不存在: userId={}", userId);
-                filterChain.doFilter(request, response);
+                write401Response(response, "用户不存在");
                 return;
             }
 
             // 检查用户状态
             if (user.getStatus() == null || user.getStatus() != 1) {
-                log.warn("用户已被禁用: userId={}", userId);
-                filterChain.doFilter(request, response);
+                write401Response(response, "用户已被禁用");
                 return;
             }
 
-            // 步骤5: 设置到 UserContext（业务代码可以使用）
+            // 步骤3: 设置到 UserContext（业务代码可以使用）
             UserContext.setUserId(userId);
             UserContext.setUser(user);
 
-            // 步骤6: 设置到 Spring Security Context（Spring Security 需要）
+            // 步骤4: 设置到 Spring Security Context（Spring Security 需要）
             UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(
                     userId,
@@ -181,23 +164,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             log.debug("JWT 认证成功: userId={}", userId);
 
-            // 步骤7: 继续过滤器链
+            // 步骤5: 继续过滤器链
             filterChain.doFilter(request, response);
 
-        } catch (AuthException e) {
-            // Token 验证失败（过期、无效等）
-            log.debug("JWT Token 验证失败: {}", e.getMessage());
-            // 即使 Token 验证失败，也继续过滤器链（让 Spring Security 处理）
-            filterChain.doFilter(request, response);
         } catch (Exception e) {
-            // 其他异常（如数据库查询失败）
-            log.error("JWT 认证过程中发生异常: {}", e.getMessage(), e);
-            log.error("异常类型: {}", e.getClass().getName());
-            // 发生异常时，仍然继续过滤器链
-            filterChain.doFilter(request, response);
+            log.error("JWT 认证失败: {}", e.getMessage(), e);
+            write401Response(response, "AccessToken已过期或无效");
         } finally {
-            // 步骤8: 请求结束后清理 ThreadLocal（防止内存泄漏）
+            // 步骤6: 请求结束后清理 ThreadLocal（防止内存泄漏）
             UserContext.clear();
         }
+    }
+
+    /**
+     * 写入 401 响应（HTTP 401 + Result JSON 格式）
+     */
+    private void write401Response(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json;charset=UTF-8");
+        String json = String.format("{\"code\":%d,\"message\":\"%s\",\"data\":null}", 401, message);
+        response.getWriter().write(json);
     }
 }
