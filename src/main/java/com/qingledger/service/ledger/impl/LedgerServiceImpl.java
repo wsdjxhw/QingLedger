@@ -19,6 +19,7 @@ import com.qingledger.mapper.LedgerMemberMapper;
 import com.qingledger.mapper.UserAuthMapper;
 import com.qingledger.mapper.UserMapper;
 import com.qingledger.service.ledger.LedgerService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class LedgerServiceImpl implements LedgerService {
 
