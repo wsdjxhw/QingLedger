@@ -3,6 +3,7 @@ package com.qingledger;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * QingLedger 智能记账系统主应用
@@ -20,6 +21,7 @@ import org.springframework.cache.annotation.EnableCaching;
  */
 @SpringBootApplication
 @EnableCaching
+@EnableScheduling
 public class QingLedgerApplication {
 
     public static void main(String[] args) {
