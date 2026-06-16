@@ -39,6 +39,8 @@ public interface LedgerService {
 
     // ==================== 邀请码 ====================
 
+    List<InvitationCode> getInvitations(Long userId, Long ledgerId);
+
     InvitationCode createInvitation(Long userId, Long ledgerId, CreateInvitationRequest req);
 
     void joinByInvitation(Long userId, JoinByInvitationRequest req);

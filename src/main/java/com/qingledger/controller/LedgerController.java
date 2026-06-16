@@ -156,6 +156,15 @@ public class LedgerController {
 
     // ==================== 邀请码 ====================
 
+    @Operation(summary = "查询邀请码列表", description = "查询账本的所有邀请码（owner/admin专属）",
+               security = @SecurityRequirement(name = "JWT"))
+    @GetMapping("/{id}/invitations")
+    public Result<List<InvitationCode>> getInvitations(@PathVariable Long id) {
+        Long userId = getCurrentUserId();
+        List<InvitationCode> invitations = ledgerService.getInvitations(userId, id);
+        return Result.ok(invitations);
+    }
+
     @Operation(summary = "生成邀请码", description = "生成账本邀请码（owner/admin专属）",
                security = @SecurityRequirement(name = "JWT"))
     @PostMapping("/{id}/invitations")

@@ -17,7 +17,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 /**
  * JWT 认证过滤器
@@ -56,6 +58,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
+    // JWT验证白名单（这些接口不需要JWT验证，即使携带了过期token也不验证）
+    private static final List<String> JWT_WHITELIST = Arrays.asList(
+        "/api/v1/auth/code",
+        "/api/v1/auth/register",
+        "/api/v1/auth/login/",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/password/reset"
+    );
+
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
 
@@ -76,6 +87,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
+        String requestURI = request.getRequestURI();
+        log.debug("处理请求URI: {}", requestURI);
+
+        // 检查是否在JWT白名单中
+        boolean isInWhitelist = JWT_WHITELIST.stream().anyMatch(path -> {
+            boolean matches;
+            if (path.endsWith("/")) {
+                matches = requestURI.startsWith(path);
+            } else {
+                matches = requestURI.equals(path) || requestURI.startsWith(path + "/");
+            }
+            log.debug("白名单检查 - 路径: {}, 匹配结果: {}", path, matches);
+            return matches;
+        });
+
+        log.debug("白名单检查最终结果: {}", isInWhitelist);
+
+        if (isInWhitelist) {
+            log.debug("请求在JWT白名单中，跳过JWT验证: {}", requestURI);
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         try {
             // 步骤1: 从请求头提取 Token
             String bearerToken = request.getHeader("Authorization");
@@ -86,16 +120,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             String accessToken = bearerToken.substring(7);
+            log.debug("开始JWT认证，Token长度: {}", accessToken.length());
 
             // 步骤2: 验证 Token 类型（必须是 Access Token，不能用 RefreshToken）
-            if (!jwtUtil.isAccessToken(accessToken)) {
-                log.debug("Token 类型错误，不是 Access Token");
+            try {
+                if (!jwtUtil.isAccessToken(accessToken)) {
+                    log.debug("Token 类型错误，不是 Access Token");
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+            } catch (Exception e) {
+                log.error("Token类型验证失败: {}", e.getMessage(), e);
                 filterChain.doFilter(request, response);
                 return;
             }
 
             // 步骤3: 提取用户ID
-            Long userId = jwtUtil.getUserId(accessToken);
+            Long userId = null;
+            try {
+                userId = jwtUtil.getUserId(accessToken);
+            } catch (Exception e) {
+                log.error("提取用户ID失败，可能是JWT secret不匹配或token格式错误: {}", e.getMessage(), e);
+                filterChain.doFilter(request, response);
+                return;
+            }
 
             if (userId == null) {
                 log.warn("Token 中没有用户ID信息");
@@ -143,7 +191,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } catch (Exception e) {
             // 其他异常（如数据库查询失败）
-            log.error("JWT 认证过程中发生异常", e);
+            log.error("JWT 认证过程中发生异常: {}", e.getMessage(), e);
+            log.error("异常类型: {}", e.getClass().getName());
             // 发生异常时，仍然继续过滤器链
             filterChain.doFilter(request, response);
         } finally {

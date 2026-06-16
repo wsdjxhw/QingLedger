@@ -354,6 +354,21 @@ public class LedgerServiceImpl implements LedgerService {
     // ==================== 邀请码 ====================
 
     @Override
+    public List<InvitationCode> getInvitations(Long userId, Long ledgerId) {
+        // 权限检查
+        Ledger ledger = getLedgerOrThrow(ledgerId);
+        LedgerMember member = getMemberOrThrow(ledgerId, userId);
+        requireRoleAtLeast(member, MemberRole.ADMIN);
+
+        // 查询该账本的所有邀请码
+        return invitationCodeMapper.selectList(
+            Wrappers.<InvitationCode>query()
+                .eq("ledger_id", ledgerId)
+                .orderByDesc("created_at")
+        );
+    }
+
+    @Override
     @Transactional
     public InvitationCode createInvitation(Long userId, Long ledgerId, CreateInvitationRequest req) {
         Ledger ledger = getLedgerOrThrow(ledgerId);
@@ -517,6 +532,9 @@ public class LedgerServiceImpl implements LedgerService {
     // ==================== 供 controller 使用的查询方法 ====================
 
     public Map<Long, User> getUsersMap(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
         List<User> users = userMapper.selectBatchIds(userIds);
         return users.stream().collect(Collectors.toMap(User::getId, u -> u));
     }

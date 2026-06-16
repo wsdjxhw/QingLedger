@@ -108,11 +108,11 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public Result<Long> register(String username, String password, String target, String code) {
-        log.info("用户注册: username={}, target={}", username, target);
+    public Result<Long> register(String username, String password, String contact, String code) {
+        log.info("用户注册: username={}, contact={}", username, contact);
 
-        // 校验目标格式
-        validateTargetFormat(target);
+        // 校验联系方式格式
+        validateTargetFormat(contact);
 
         // 校验用户名
         if (username == null || username.trim().isEmpty()) {
@@ -129,17 +129,17 @@ public class AuthServiceImpl implements AuthService {
 
         // 校验验证码
         try {
-            // 根据 target 判断验证码类型（PHONE 或 EMAIL）
+            // 根据 contact 判断验证码类型（PHONE 或 EMAIL）
             String verificationType;
-            if (target.matches(PHONE_PATTERN)) {
+            if (contact.matches(PHONE_PATTERN)) {
                 verificationType = AUTH_TYPE_PHONE;
-            } else if (target.matches(EMAIL_PATTERN)) {
+            } else if (contact.matches(EMAIL_PATTERN)) {
                 verificationType = AUTH_TYPE_EMAIL;
             } else {
-                return Result.fail("不支持的验证码目标类型");
+                return Result.fail("不支持的联系方式类型");
             }
 
-            if (!verificationService.verifyCode(verificationType, target, code)) {
+            if (!verificationService.verifyCode(verificationType, contact, code)) {
                 return Result.fail("验证码错误或已过期");
             }
         } catch (Exception e) {
@@ -153,7 +153,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // 检查手机号或邮箱是否已存在
-        if (existsByPhoneOrEmail(target)) {
+        if (existsByPhoneOrEmail(contact)) {
             return Result.fail("该手机号或邮箱已被注册");
         }
 
@@ -172,18 +172,18 @@ public class AuthServiceImpl implements AuthService {
         userAuth.setIsPrimary(true);
         userAuth.setBindAt(LocalDateTime.now());
 
-        // 根据目标类型设置认证类型和标识
+        // 根据联系方式类型设置认证类型和标识
         String authType;
-        if (target.matches(PHONE_PATTERN)) {
+        if (contact.matches(PHONE_PATTERN)) {
             authType = AUTH_TYPE_PHONE;
-        } else if (target.matches(EMAIL_PATTERN)) {
+        } else if (contact.matches(EMAIL_PATTERN)) {
             authType = AUTH_TYPE_EMAIL;
         } else {
             authType = AUTH_TYPE_USERNAME;
         }
 
         userAuth.setAuthType(authType);
-        userAuth.setIdentifier(target);
+        userAuth.setIdentifier(contact);
 
         userAuthMapper.insert(userAuth);
 
