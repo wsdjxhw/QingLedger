@@ -79,12 +79,12 @@ public class AuthController {
     public Result<LoginResponse> register(@Valid @RequestBody RegisterRequest request,
                                           HttpServletRequest httpRequest,
                                           HttpServletResponse httpResponse) {
-        log.info("用户注册请求: account={}", request.getAccount());
+        log.info("用户注册请求: username={}, contact={}", request.getUsername(), request.getContact());
 
         Result<Long> result = authService.register(
-            request.getAccount(),
+            request.getUsername(),
             request.getPassword(),
-            request.getAccount(),
+            request.getContact(),
             request.getCode()
         );
 
@@ -149,6 +149,8 @@ public class AuthController {
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse) {
         log.info("刷新Token请求");
+        log.debug("Cookie中的RefreshToken: {}", cookieRefreshToken != null ? "存在" : "不存在");
+        log.debug("参数中的RefreshToken: {}", paramRefreshToken != null ? "存在" : "不存在");
 
         // 优先从 Cookie 获取(Web 端)
         String refreshToken = cookieRefreshToken;
@@ -158,6 +160,7 @@ public class AuthController {
         }
 
         if (refreshToken == null || refreshToken.isEmpty()) {
+            log.warn("刷新Token失败：未提供RefreshToken");
             return Result.fail("未提供 RefreshToken");
         }
 
