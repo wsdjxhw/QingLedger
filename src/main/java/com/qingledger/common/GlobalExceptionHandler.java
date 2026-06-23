@@ -9,46 +9,30 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
-/**
- * 全局异常处理器
- *
- * @author QingLedger Team
- */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     * 处理业务异常
-     */
     @ExceptionHandler(BusinessException.class)
     public Result<Void> handleBusinessException(BusinessException e) {
         log.error("业务异常: {}", e.getMessage());
         return Result.fail(e.getCode(), e.getMessage());
     }
 
-    /**
-     * 处理认证异常
-     */
     @ExceptionHandler(AuthException.class)
     public Result<Void> handleAuthException(AuthException e) {
         log.error("认证异常: {}", e.getMessage());
         return Result.fail(e.getCode(), e.getMessage());
     }
 
-    /**
-     * 处理验证码异常
-     */
     @ExceptionHandler(VerificationException.class)
     public Result<Void> handleVerificationException(VerificationException e) {
         log.error("验证码异常: {}", e.getMessage());
         return Result.fail(e.getCode(), e.getMessage());
     }
 
-    /**
-     * 处理参数校验异常
-     */
     @ExceptionHandler({MethodArgumentNotValidException.class, BindException.class})
     public Result<Void> handleValidationException(Exception e) {
         String message = "参数校验失败";
@@ -63,18 +47,23 @@ public class GlobalExceptionHandler {
         return Result.fail(400, message);
     }
 
-    /**
-     * 处理缺少必填请求参数异常
-     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public Result<Void> handleHandlerMethodValidationException(HandlerMethodValidationException e) {
+        String message = "参数校验失败";
+        if (!e.getAllValidationResults().isEmpty()
+                && !e.getAllValidationResults().get(0).getResolvableErrors().isEmpty()) {
+            message = e.getAllValidationResults().get(0).getResolvableErrors().get(0).getDefaultMessage();
+        }
+        log.error("方法参数校验异常: {}", message);
+        return Result.fail(400, message);
+    }
+
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public Result<Void> handleMissingParam(MissingServletRequestParameterException e) {
         log.error("缺少必填参数: {}", e.getParameterName());
         return Result.fail(400, "缺少必填参数: " + e.getParameterName());
     }
 
-    /**
-     * 处理 JSON 反序列化异常
-     */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public Result<Void> handleHttpMessageNotReadable(HttpMessageNotReadableException e) {
         Throwable current = e;
@@ -88,21 +77,15 @@ public class GlobalExceptionHandler {
         return Result.fail(400, "请求参数格式错误");
     }
 
-    /**
-     * 处理运行时异常
-     */
     @ExceptionHandler(RuntimeException.class)
     public Result<Void> handleRuntimeException(RuntimeException e) {
         log.error("运行时异常", e);
-        return Result.fail("系统繁忙,请稍后重试");
+        return Result.fail("系统繁忙，请稍后重试");
     }
 
-    /**
-     * 处理其他异常
-     */
     @ExceptionHandler(Exception.class)
     public Result<Void> handleException(Exception e) {
         log.error("系统异常", e);
-        return Result.fail("系统异常,请联系管理员");
+        return Result.fail("系统异常，请联系管理员");
     }
 }

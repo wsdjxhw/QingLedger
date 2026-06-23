@@ -28,7 +28,7 @@ public class TransactionListQuery {
     private int page = 1;
 
     @Min(value = 1, message = "size 必须 >= 1")
-    @Max(value = 100, message = "size 必须 <= 100")
+    @Max(value = 1000, message = "size 必须 <= 1000")
     private int size = 20;
 
     private String sortBy = "occur_date";
