@@ -34,4 +34,16 @@ public class ChatCompletionRequest {
     /** 最大输出 token 数 */
     @JsonProperty("max_tokens")
     private Integer maxTokens;
+
+    /** 思考模式控制：deepseek-v4-flash 默认启用思考模式，工具调用时需禁用 */
+    private Thinking thinking;
+
+    /** 思考模式控制参数 */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Thinking {
+        /** enabled / disabled */
+        private String type;
+    }
 }
