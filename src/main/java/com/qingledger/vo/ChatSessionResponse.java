@@ -12,6 +12,9 @@ public class ChatSessionResponse {
     /** 关联账本 ID */
     private Long ledgerId;
 
+    /** 会话标题 */
+    private String title;
+
     /** 当前人设编码 */
     private String personaType;
 

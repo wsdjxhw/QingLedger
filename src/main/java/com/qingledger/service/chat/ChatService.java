@@ -10,7 +10,7 @@ import java.util.List;
 public interface ChatService {
 
     /** 创建 AI 对话会话 */
-    Long createSession(Long userId, Long ledgerId, String personaType);
+    Long createSession(Long userId, Long ledgerId, String personaType, String title);
 
     /** 获取用户的会话列表 */
     List<ChatSession> listSessions(Long userId);
@@ -23,6 +23,12 @@ public interface ChatService {
 
     /** 切换会话的人设 */
     void switchPersona(Long userId, Long sessionId, String personaType);
+
+    /** 重命名会话 */
+    void renameSession(Long userId, Long sessionId, String title);
+
+    /** 删除会话（软删除） */
+    void deleteSession(Long userId, Long sessionId);
 
     /** 获取可用人设列表 */
     List<PersonaTemplate> listPersonas();

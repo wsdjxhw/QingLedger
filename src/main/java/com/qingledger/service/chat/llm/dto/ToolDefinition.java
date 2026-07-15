@@ -1,5 +1,6 @@
 package com.qingledger.service.chat.llm.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -62,6 +63,7 @@ public class ToolDefinition {
         private String description;
         /** 枚举值列表 */
         @JsonProperty("enum")
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         private List<String> enum_;
     }
 }

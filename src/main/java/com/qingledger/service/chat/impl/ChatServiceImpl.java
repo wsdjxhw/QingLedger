@@ -66,13 +66,14 @@ public class ChatServiceImpl implements ChatService {
     /** 创建 AI 对话会话 */
     @Override
     @Transactional
-    public Long createSession(Long userId, Long ledgerId, String personaType) {
+    public Long createSession(Long userId, Long ledgerId, String personaType, String title) {
         validateLedgerAccess(userId, ledgerId);
         validatePersonaType(personaType);
 
         ChatSession session = new ChatSession();
         session.setUserId(userId);
         session.setLedgerId(ledgerId);
+        session.setTitle(title != null && !title.isBlank() ? title.trim() : null);
         session.setPersonaType(personaType);
         session.setStatus("active");
         chatSessionMapper.insert(session);
@@ -189,6 +190,7 @@ public class ChatServiceImpl implements ChatService {
             );
 
             markRequestSuccess(request, response);
+            autoNameSession(session, content);
             touchSession(sessionId);
             return response;
         } catch (Exception e) {
@@ -246,6 +248,48 @@ public class ChatServiceImpl implements ChatService {
                         .eq("id", sessionId)
                         .eq("user_id", userId)
                         .set("persona_type", personaType)
+        );
+    }
+
+    /** 重命名会话 */
+    @Override
+    public void renameSession(Long userId, Long sessionId, String title) {
+        ChatSession session = validateSessionAccess(userId, sessionId);
+        validateLedgerAccess(userId, session.getLedgerId());
+        chatSessionMapper.update(
+                null,
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<ChatSession>update()
+                        .eq("id", sessionId)
+                        .eq("user_id", userId)
+                        .set("title", title != null ? title.trim() : null)
+        );
+    }
+
+    /** 删除会话（软删除） */
+    @Override
+    public void deleteSession(Long userId, Long sessionId) {
+        ChatSession session = validateSessionAccess(userId, sessionId);
+        validateLedgerAccess(userId, session.getLedgerId());
+        chatSessionMapper.update(
+                null,
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<ChatSession>update()
+                        .eq("id", sessionId)
+                        .eq("user_id", userId)
+                        .set("status", "deleted")
+        );
+    }
+
+    /** 如果会话没有标题则自动从首条消息生成 */
+    private void autoNameSession(ChatSession session, String content) {
+        if (session.getTitle() != null && !session.getTitle().isBlank()) {
+            return;
+        }
+        String title = content.length() > 25 ? content.substring(0, 25) + "..." : content;
+        chatSessionMapper.update(
+                null,
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<ChatSession>update()
+                        .eq("id", session.getId())
+                        .set("title", title)
         );
     }
 

@@ -20,6 +20,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,11 +45,11 @@ public class ChatController {
     }
 
     /** 创建 AI 对话会话 */
-    @Operation(summary = "创建会话", description = "创建 AI 记账对话会话，并指定账本与人设", security = @SecurityRequirement(name = "JWT"))
+    @Operation(summary = "创建会话", description = "创建 AI 记账对话会话，指定账本与人设，可选标题", security = @SecurityRequirement(name = "JWT"))
     @PostMapping("/session")
     public Result<Long> createSession(@Valid @RequestBody CreateSessionRequest req) {
         Long userId = getCurrentUserId();
-        Long sessionId = chatService.createSession(userId, req.getLedgerId(), req.getPersonaType());
+        Long sessionId = chatService.createSession(userId, req.getLedgerId(), req.getPersonaType(), req.getTitle());
         return Result.ok(sessionId);
     }
 
@@ -101,6 +102,31 @@ public class ChatController {
         return Result.ok();
     }
 
+    /** 重命名会话 */
+    @Operation(summary = "重命名会话", description = "修改指定会话的标题", security = @SecurityRequirement(name = "JWT"))
+    @PutMapping("/session/{sessionId}/title")
+    public Result<Void> renameSession(@PathVariable Long sessionId,
+                                      @RequestParam
+                                      @NotBlank(message = "title 不能为空")
+                                      @Size(max = 100, message = "标题长度不能超过100")
+                                      String title) {
+        if (title.trim().length() > 100) {
+            throw new BusinessException(400, "标题长度不能超过100");
+        }
+        Long userId = getCurrentUserId();
+        chatService.renameSession(userId, sessionId, title);
+        return Result.ok();
+    }
+
+    /** 删除会话（软删除，数据保留） */
+    @Operation(summary = "删除会话", description = "软删除指定会话，消息数据保留", security = @SecurityRequirement(name = "JWT"))
+    @DeleteMapping("/session/{sessionId}")
+    public Result<Void> deleteSession(@PathVariable Long sessionId) {
+        Long userId = getCurrentUserId();
+        chatService.deleteSession(userId, sessionId);
+        return Result.ok();
+    }
+
     private Long getCurrentUserId() {
         Long userId = UserContext.getUserId();
         if (userId == null) {
@@ -113,6 +139,7 @@ public class ChatController {
         ChatSessionResponse response = new ChatSessionResponse();
         response.setId(session.getId());
         response.setLedgerId(session.getLedgerId());
+        response.setTitle(session.getTitle());
         response.setPersonaType(session.getPersonaType());
         response.setStatus(session.getStatus());
         response.setCreatedAt(session.getCreatedAt());

@@ -1,5 +1,8 @@
 package com.qingledger.service.chat.llm;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.qingledger.common.BusinessException;
 import com.qingledger.service.chat.llm.dto.ChatCompletionRequest;
 import com.qingledger.service.chat.llm.dto.ChatCompletionResponse;
@@ -11,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.net.SocketTimeoutException;
 import java.time.Duration;
@@ -26,6 +30,8 @@ public class DeepSeekLlmClient implements LlmClient {
 
     private final WebClient webClient;
     private final String model;
+    private static final ObjectMapper objectMapper = new ObjectMapper()
+            .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
 
     public DeepSeekLlmClient(@Value("${llm.deepseek.api-key}") String apiKey,
                              @Value("${llm.deepseek.base-url:https://api.deepseek.com/v1}") String baseUrl,
@@ -49,6 +55,9 @@ public class DeepSeekLlmClient implements LlmClient {
         if (tools != null && !tools.isEmpty()) {
             request.setTools(tools);
             request.setToolChoice("auto");
+            // deepseek-v4-flash 默认启用思考模式，思考模式下工具调用需正确传回 reasoning_content，
+            // 否则后续轮次会返回 400。这里显式禁用思考模式以兼容工具调用。
+            request.setThinking(new ChatCompletionRequest.Thinking("disabled"));
         }
 
         LlmMessage systemMsg = LlmMessage.builder()
@@ -79,6 +88,15 @@ public class DeepSeekLlmClient implements LlmClient {
      * @param retried 是否已重试过（避免无限递归）
      */
     private ChatCompletionResponse doChat(ChatCompletionRequest request, boolean retried) {
+        if (log.isDebugEnabled()) {
+            try {
+                String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(request);
+                log.debug("DeepSeek API 请求:\n{}", json);
+            } catch (JsonProcessingException e) {
+                log.debug("DeepSeek API 请求序列化失败: {}", e.getMessage());
+            }
+        }
+
         try {
             ChatCompletionResponse response = webClient.post()
                     .uri("/chat/completions")
@@ -95,6 +113,12 @@ public class DeepSeekLlmClient implements LlmClient {
             }
             return response;
         } catch (RuntimeException e) {
+            if (e instanceof WebClientResponseException wcre) {
+                String body = wcre.getResponseBodyAsString();
+                log.error("DeepSeek API 返回错误 [status={}, body=\"{}\"]",
+                        wcre.getStatusCode(), body, wcre);
+            }
+
             if (isTimeoutError(e)) {
                 throw new BusinessException(500, "AI 暂时无响应，请稍后再试");
             }
