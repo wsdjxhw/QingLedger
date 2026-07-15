@@ -16,6 +16,10 @@ BEGIN
             ALTER TABLE chat_session
                 ADD COLUMN title VARCHAR(100) NULL COMMENT '会话标题' AFTER ledger_id;
         END IF;
+
+        -- 扩展 status 枚举，支持软删除
+        ALTER TABLE chat_session
+            MODIFY COLUMN status ENUM('active', 'archived', 'deleted') DEFAULT 'active' COMMENT '状态';
     END IF;
 END $$
 
