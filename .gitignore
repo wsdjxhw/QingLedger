@@ -58,3 +58,5 @@ local-toolchains.xml
 
 # Claude Code 开发工具配置
 .claude/
+/INTERVIEW_PREP.md
+/RESUME_PROJECT.md
